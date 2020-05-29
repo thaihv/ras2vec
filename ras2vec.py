@@ -103,7 +103,7 @@ lon = 105.7646925
 # lon = 105.7887625
 zoom = 18
 
-style = styleZones
+style = styleLocalRoad
 
 if style == styleBuildings:     
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Buildings.shp'
