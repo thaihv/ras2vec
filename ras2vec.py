@@ -7,12 +7,11 @@ import cv2
 import numpy as np     
 from requests.utils import quote
 from skimage import io
-import math
 
 import os
 import utils
 import globalmaptiles as gt
-from osgeo import ogr
+
 
 tile_dir = 'C:\Download\Data\CG'
 level = 18
@@ -73,11 +72,11 @@ styleHighwayControlledAccessRoad = quote('feature:road.highway.controlled_access
 styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 
 #My Dinh
-lat = 21.0312246
-lon = 105.7646925
-# next X
 # lat = 21.0312246
-# lon = 105.76812572753906
+# lon = 105.7646925
+# next X
+lat = 21.0312246
+lon = 105.76812572753906
 
 # lat = 21.0399554
 # lon = 105.7920228
@@ -103,7 +102,7 @@ lon = 105.7646925
 # lon = 105.7887625
 zoom = 18
 
-style = styleLocalRoad
+style = styleBuildings
 
 if style == styleBuildings:     
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Buildings.shp'
@@ -163,12 +162,12 @@ def fetch_onlinebuildingsdata(url, dest_img):
             #cv2.drawContours(fullSatelliteImg,[contours[x]],0,(0,0,255),-1)
             cnt = [contours[x]][0]
             if cv2.contourArea(cnt) > 80:
-                cnt = [contours[x]][0]
-                epsilon = 0.0001*cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, epsilon, True)
+#                 epsilon = 0.0001*cv2.arcLength(cnt, True)
+#                 approx = cv2.approxPolyDP(cnt, epsilon, True)
 #                 cv2.drawContours(fullSatelliteImg, [approx], -1, (0,0,255), -1)
 #                 cv2.drawContours(fullRoadmapImg, [approx], -1, (0,0,255), -1)
-                buildings.append(approx)             
+#                 buildings.append(approx)
+                buildings.append(cnt)             
     # draw the outline of all contours
     for cnt in contours:
             cv2.drawContours(fullSatelliteImg,[cnt],0,(0,255,0),1)

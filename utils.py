@@ -5,14 +5,13 @@ Created on May 6, 2020
 '''
 import cv2
 import shapefile
-import numpy as np
 import math
 import requests
-import geopandas as gpd
+
 import pyproj
-import json
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Polygon
 import shapely.ops as ops
+import shapely.geometry as geometry
 from functools import partial
 from osgeo import osr
 
@@ -117,33 +116,53 @@ def write_points2shpfile(outputfile, points):
     print('Done! ', outputfile)
         
 def write_polygons2shpfile(outputfile, polygons):
+    # Calculate BBOX
+    multipolygon = []
+    for n, p in enumerate(polygons):
+        gpoly = Polygon(p)
+        multipolygon.append(gpoly)
+    polygon_collection = geometry.MultiPolygon(multipolygon)
+    bbox = polygon_collection.bounds
+    bbpoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+    
     centerpoints = []
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYGON, encoding="utf8") as shp:
         shp.field('Name', 'C', size=40)
         shp.field('CalcArea', 'N', decimal=6)
+        
+        # first one, add box to shape file
+        coords = bbpoly.exterior.coords
+        outpoly = []
+        for pp in list(coords):
+            #print("P:-->", [pp[0],pp[1]])
+            outpoly.append([pp[0],pp[1]])
+        shp.poly([outpoly])
+        area = calculate_polygon_area_in_m2(bbpoly)
+        shp.record("Boundary", area)
+        # second one, add other polygons to shape file
         for n, p in enumerate(polygons):
             #print(p)
-            outpoly = []
-            outpoly.append(p)
-            shp.poly(outpoly)
-            # Simplify and create centroid
-            gpoly = Polygon(p)
-            #gpoly = gpoly.simplify(0.5)
-            centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))
-            
-#             print("P: --> ", p)
-#             print("GP:-->", gpoly)
-#             coords = gpoly._get_coords()
-#             for i, pp in enumerate(coords):
-#                 print("PP:-->", pp)
 #             outpoly = []
-#             outpoly.append(gpoly._get_coords())
+#             outpoly.append(p)
 #             shp.poly(outpoly)
+#             
+#             # Simplify and create centroid
+            gpoly = Polygon(p)            
+            #print("P: --> ", p)
+            gpoly = gpoly.simplify(0.000005)
+            #print("Simplify P:-->", gpoly)
+            centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))             
+            coords = gpoly.exterior.coords
+            outpoly = []
+            for pp in list(coords):
+                outpoly.append([pp[0],pp[1]])
+            shp.poly([outpoly])
             # Center point info
 #             results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
 #             r = results['results'][0]['address_components'] [0]['long_name']
 #             # Name
 #             strJson = json.dumps(r).encode("utf-8")
+
             # Area
             area = calculate_polygon_area_in_m2(gpoly)
             shp.record("polygon " + str(n), area)
@@ -154,8 +173,23 @@ def write_polygons2shpfile(outputfile, polygons):
     add_prj.write(epsg)
     add_prj.close()
     print('Done! ', outputfile)
-    
-    write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
+#    write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
+    select_jointlypolygons(outputfile)
+
+
+def select_jointlypolygons(outputfile):
+    with shapefile.Reader(outputfile) as shp:
+        print('BBOX for file %s :' % outputfile, shp.bbox)
+        print("Operations on record:")
+        records = shp.records()
+        print('Numbers of Record:', len(records))
+        bbox = shp.bbox
+        bBoxPoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+        print("Polygon--> ", bBoxPoly)
+#         shapes = shp.shapes()
+#         for shape in shapes:
+#             print("Point list--> ", shape.points)            
+        
     
 def write_linestring2shpfile(outputfile, lines):
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYLINE, encoding="utf8") as shp:
