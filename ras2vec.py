@@ -10,7 +10,6 @@ from skimage import io
 
 import os
 import utils
-import globalmaptiles as gt
 
 
 tile_dir = 'C:\Download\Data\CG'
@@ -71,18 +70,19 @@ styleHighwayRoad = quote('feature:road.highway|element:geometry.stroke|visibilit
 styleHighwayControlledAccessRoad = quote('feature:road.highway.controlled_access|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 
-#My Dinh
-# lat = 21.0312246
-# lon = 105.7646925
-# next X
+# Center My Dinh (X,Y)
 lat = 21.0312246
-lon = 105.76812572753906
+lon = 105.7646925
+# (X + 1, Y)
+# lat = 21.0312246
+# lon = 105.76812572753906
+# (X + 1, Y + 1)
+# lat = 21.028020076956896
+# lon = 105.76812572753906
+# (X, Y + 1)
+# lat = 21.028020076956896
+# lon = 105.7646925
 
-# lat = 21.0399554
-# lon = 105.7920228
-
-# lat = 21.028240
-# lon = 105.771832
 
 # Cau vuot Mai Dich
 # lat = 21.035628
@@ -200,25 +200,12 @@ def fetch_onlineroaddata(url, dest_img):
             roads.append(cnt)
     return roads
 def convert_pixelarray2worldcoordinate(pointsarray, centerlat, centerlon, zoom = 18, tilezise = 640):
-    
     gis_pointsarray = []
-    
-    mercator = gt.GlobalMercator(tilezise)
-    mx, my = mercator.LatLonToMeters(centerlat,centerlon)
-    print ("Mecator --> LatLonToMeters:  Google:900913 [%s , %s]" % (mx, my))
-
-    px, py = mercator.MetersToPixels(mx, my, zoom)
-    tx, ty = mercator.PixelsToTile(px, py)
-    print ("Mecator --> MetersToPixels--> Tiles:  Pixel [%s , %s] at Tile [%s , %s]" % (px, py, tx, ty))
-    
-    # Calculate next tile from X
-    
-    newLatCenter, newLonCenter = utils.getPointLatLngFromPixel(320 - 640, 320, centerlat, centerlon, tilezise, zoom)
-    
-    print ("Center of next is [%s , %s]" % (newLatCenter, newLonCenter))
+    # Calculate next tile from X, Y = (320,320) as tile size = 640 
+    newLatCenter, newLonCenter = utils.getPointLatLngFromPixel(320, 320 + 640, centerlat, centerlon, tilezise, zoom)
+    print ("New Center of (X, Y + 1) is [%s , %s]" % (newLatCenter, newLonCenter))
     
     for n, p in enumerate(pointsarray):
-        #print('Polygon {}: {}'.format(n, p))
         points = []
         for j in p:
             lat, lon = utils.getPointLatLngFromPixel(int(j[0][0]),int(j[0][1]), centerlat, centerlon, tilezise, zoom)
@@ -245,7 +232,6 @@ else:
     roads = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
     created_file = create_polyline_shapefile(roads)
     
-
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
     

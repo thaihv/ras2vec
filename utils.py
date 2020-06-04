@@ -9,7 +9,7 @@ import math
 import requests
 
 import pyproj
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, LineString
 import shapely.ops as ops
 import shapely.geometry as geometry
 from functools import partial
@@ -124,21 +124,22 @@ def write_polygons2shpfile(outputfile, polygons):
     polygon_collection = geometry.MultiPolygon(multipolygon)
     bbox = polygon_collection.bounds
     bbpoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+    boundarylines = LineString(bbpoly.exterior.coords)
     
     centerpoints = []
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYGON, encoding="utf8") as shp:
         shp.field('Name', 'C', size=40)
         shp.field('CalcArea', 'N', decimal=6)
+        shp.field('Jointly', 'L')
         
-        # first one, add box to shape file
+        # first one, add bbox to shape file
         coords = bbpoly.exterior.coords
         outpoly = []
         for pp in list(coords):
-            #print("P:-->", [pp[0],pp[1]])
             outpoly.append([pp[0],pp[1]])
         shp.poly([outpoly])
         area = calculate_polygon_area_in_m2(bbpoly)
-        shp.record("Boundary", area)
+        shp.record("polygon 0", area, 0)
         # second one, add other polygons to shape file
         for n, p in enumerate(polygons):
             #print(p)
@@ -146,26 +147,30 @@ def write_polygons2shpfile(outputfile, polygons):
 #             outpoly.append(p)
 #             shp.poly(outpoly)
 #             
-#             # Simplify and create centroid
-            gpoly = Polygon(p)            
-            #print("P: --> ", p)
+            gpoly = Polygon(p)          
+            # Identify jointly polygon
+            bJointly = 0
+            if boundarylines.touches(gpoly):
+                bJointly = 1  
+            #Simplify and create centroid
             gpoly = gpoly.simplify(0.000005)
-            #print("Simplify P:-->", gpoly)
             centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))             
             coords = gpoly.exterior.coords
             outpoly = []
             for pp in list(coords):
                 outpoly.append([pp[0],pp[1]])
             shp.poly([outpoly])
+
+            # Area
+            area = calculate_polygon_area_in_m2(gpoly)
             # Center point info
 #             results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
 #             r = results['results'][0]['address_components'] [0]['long_name']
 #             # Name
 #             strJson = json.dumps(r).encode("utf-8")
-
-            # Area
-            area = calculate_polygon_area_in_m2(gpoly)
-            shp.record("polygon " + str(n), area)
+            
+            shp.record("polygon " + str(n + 1), area, bJointly)
+            
     add_prj = open("%s.prj" % outputfile[:-4], "w")
     proj = osr.SpatialReference()
     proj.ImportFromEPSG(4326)
@@ -174,23 +179,7 @@ def write_polygons2shpfile(outputfile, polygons):
     add_prj.close()
     print('Done! ', outputfile)
 #    write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
-    select_jointlypolygons(outputfile)
 
-
-def select_jointlypolygons(outputfile):
-    with shapefile.Reader(outputfile) as shp:
-        print('BBOX for file %s :' % outputfile, shp.bbox)
-        print("Operations on record:")
-        records = shp.records()
-        print('Numbers of Record:', len(records))
-        bbox = shp.bbox
-        bBoxPoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
-        print("Polygon--> ", bBoxPoly)
-#         shapes = shp.shapes()
-#         for shape in shapes:
-#             print("Point list--> ", shape.points)            
-        
-    
 def write_linestring2shpfile(outputfile, lines):
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYLINE, encoding="utf8") as shp:
         shp.field('Name', 'C', size=40)
