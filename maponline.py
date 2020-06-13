@@ -8,6 +8,8 @@ from flask import Flask,render_template
 data = pd.read_csv("data.csv",skiprows=5,nrows=1) 
 
 list_value = data.values.tolist()
+api_key = '1TQrfWgsvqgE9LKy1zvQRrNvC9o2MOhbjx2NBZp-Uv8'
+
 #print(list_value[0])
 
 #Latitude and Longitude
@@ -21,24 +23,25 @@ list_value = data.values.tolist()
 # latitude = 21.02996368610165
 # longitude = 105.76350223108444
 
-latitude = 21.030637544689217
-longitude = 105.7658211185765
+latitude = 21.02996368610165
+longitude = 105.76350223108444
 
-#URL = "https://revgeocode.search.hereapi.com/v1/revgeocode"
-api_key = '1TQrfWgsvqgE9LKy1zvQRrNvC9o2MOhbjx2NBZp-Uv8'
-# PARAMS = {
-#             'at': '{},{}'.format(latitude,longitude),
-#             'apikey': api_key
-#          }
-# r = requests.get(url = URL, params = PARAMS)  
-# data = r.json() 
-# outprint = json.dumps(data).encode(encoding='utf_8', errors='strict')
-# #address = data['items'][0]['title'] 
-# address = data 
-# print(outprint)
+# For Google Geocode
+# data = utils.getlocationinformation(latitude, longitude, 'AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU')
+# address = data['results']
 
-data = utils.getlocationinformation(latitude, longitude, 'AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU')
-address = data['results']
+# For Here platform location services
+URL = "https://revgeocode.search.hereapi.com/v1/revgeocode"
+PARAMS = {
+            'at': '{},{}'.format(latitude,longitude),
+            'apikey': api_key
+         }
+r = requests.get(url = URL, params = PARAMS)  
+data = r.json() 
+address = data 
+
+
+
 
 
 # place_id='EkgxOCBQaOG7kSBUcuG6p24gSOG7r3UgROG7sWMsIE3hu7kgxJDDrG5oLCBU4burIExpw6ptLCBIw6AgTuG7mWksIFZpZXRuYW0iGhIYChQKEgnxaMONvFQ0MRGGw1f-AIi43xAS'

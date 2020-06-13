@@ -9,6 +9,7 @@ import math
 import requests
 
 import pyproj
+import json
 from shapely.geometry import Polygon, LineString
 import shapely.ops as ops
 import shapely.geometry as geometry
@@ -131,6 +132,7 @@ def write_polygons2shpfile(outputfile, polygons):
         shp.field('Name', 'C', size=40)
         shp.field('CalcArea', 'N', decimal=6)
         shp.field('Jointly', 'L')
+        shp.field('Address', 'C', size=250)
         
         # first one, add bbox to shape file
         coords = bbpoly.exterior.coords
@@ -139,7 +141,7 @@ def write_polygons2shpfile(outputfile, polygons):
             outpoly.append([pp[0],pp[1]])
         shp.poly([outpoly])
         area = calculate_polygon_area_in_m2(bbpoly)
-        shp.record("polygon 0", area, 0)
+        shp.record("polygon 0", area, 0, 'Boundary')
         # second one, add other polygons to shape file
         for n, p in enumerate(polygons):
             #print(p)
@@ -164,12 +166,14 @@ def write_polygons2shpfile(outputfile, polygons):
             # Area
             area = calculate_polygon_area_in_m2(gpoly)
             # Center point info
-#             results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
-#             r = results['results'][0]['address_components'] [0]['long_name']
-#             # Name
-#             strJson = json.dumps(r).encode("utf-8")
+            results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
+            r = results['results'][0]['formatted_address']
+            # Name
+            strJson = json.dumps(r).encode("utf-8")
             
-            shp.record("polygon " + str(n + 1), area, bJointly)
+            #print(strJson)
+            shp.record("polygon " + str(n + 1), area, bJointly, r)
+            print("...", end = '')
             
     add_prj = open("%s.prj" % outputfile[:-4], "w")
     proj = osr.SpatialReference()
@@ -178,7 +182,7 @@ def write_polygons2shpfile(outputfile, polygons):
     add_prj.write(epsg)
     add_prj.close()
     print('Done! ', outputfile)
-#    write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
+    write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
 
 def write_linestring2shpfile(outputfile, lines):
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYLINE, encoding="utf8") as shp:

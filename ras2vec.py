@@ -71,8 +71,8 @@ styleHighwayControlledAccessRoad = quote('feature:road.highway.controlled_access
 styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 
 # Center My Dinh (X,Y)
-lat = 21.0312246
-lon = 105.7646925
+# lat = 21.0312246
+# lon = 105.7646925
 # (X + 1, Y)
 # lat = 21.0312246
 # lon = 105.76812572753906
@@ -89,8 +89,8 @@ lon = 105.7646925
 # lon = 105.781349
 
 #test highway
-# lat = 21.0813699
-# lon = 105.7887625
+lat = 21.0813699
+lon = 105.7887625
 # highway next Y + 1
 # lat = 21.07816645652331
 # lon = 105.7887625
@@ -101,8 +101,9 @@ lon = 105.7646925
 # lat = 21.074962944007055
 # lon = 105.7887625
 zoom = 18
+imagesize = 640
 
-style = styleBuildings
+style = styleHighwayRoad
 
 if style == styleBuildings:     
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Buildings.shp'
@@ -111,30 +112,73 @@ elif style == styleZones:
 elif style == styleHighwayRoad:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Highways.shp'
 elif style == styleLocalRoad:
-    outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Localroads.shp'    
+    outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Localroads.shp'  
+elif style == styleHighwayControlledAccessRoad:
+    outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_HighwayControlledAccess.shp'
     
 maptype_satellite = 'satellite'
 maptype_roadmap = 'roadmap'
 maptype_terrain = 'terrain'
 maptype_hybrid  = 'hybrid'
 
-fullTerrain = "https://maps.googleapis.com/maps/api/staticmap?center=" + str(lat) + "," + str(lon) + "&zoom=" + str(18) + "&maptype=" + maptype_terrain + "&size=640x640&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
-fullSatellite = "https://maps.googleapis.com/maps/api/staticmap?center=" + str(lat) + "," + str(lon) + "&zoom=" + str(18) + "&maptype=" + maptype_satellite + "&size=640x640&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
-fullRoadMap = "https://maps.googleapis.com/maps/api/staticmap?center=" + str(lat) + "," + str(lon) + "&zoom=" + str(18) + "&maptype=" + maptype_roadmap + "&size=640x640&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
-fullHybrid = "https://maps.googleapis.com/maps/api/staticmap?center=" + str(lat) + "," + str(lon) + "&zoom=" + str(18) + "&maptype=" + maptype_hybrid + "&size=640x640&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
+getpostition = "&center=" + str(lat) + "," + str(lon)
+getzoom = "&zoom=" + str(zoom)
+getsize = "&size=" + str(imagesize) + "x" + str(imagesize)
 
-workingUrl = "http://maps.googleapis.com/maps/api/staticmap?center=" + str(lat) + "," + str(lon) + "&zoom=" + str(18) + "&sensor=false&size=640x640&maptype=roadmap&style=visibility:off&style=" + style + "&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
+
+fullTerrain = "https://maps.googleapis.com/maps/api/staticmap?maptype=" + maptype_terrain + "&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
+fullSatellite = "https://maps.googleapis.com/maps/api/staticmap?maptype=" + maptype_satellite + "&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
+fullRoadMap = "https://maps.googleapis.com/maps/api/staticmap?maptype=" + maptype_roadmap + "&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
+fullHybrid = "https://maps.googleapis.com/maps/api/staticmap?maptype=" + maptype_hybrid + "&style=feature:all&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
+
+downloadUrl = "http://maps.googleapis.com/maps/api/staticmap?sensor=false&maptype=roadmap&style=visibility:off&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
+workingUrl = "http://maps.googleapis.com/maps/api/staticmap?sensor=false&maptype=roadmap&style=visibility:off&style=" + style + "&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
 print(fullRoadMap)
 print(workingUrl)
 
 
-fullSatelliteImg = io.imread(fullSatellite)
+fullSatelliteImg = io.imread(fullSatellite + getpostition + getzoom + getsize)
 fullSatelliteImg = cv2.cvtColor(fullSatelliteImg, cv2.COLOR_BGR2RGB)
 
-fullRoadmapImg = io.imread(fullRoadMap)
+fullRoadmapImg = io.imread(fullRoadMap + getpostition + getzoom + getsize)
 fullRoadmapImg = cv2.cvtColor(fullRoadmapImg, cv2.COLOR_BGR2RGB)
+
+
+def create_offlinedata(url, org_lat, org_lon, tilezise, zoom, dest_folder, tilenum):
+    #Create URL
+    getzoom = "&zoom=" + str(zoom)
+    getsize = "&size=" + str(tilezise) + "x" + str(tilezise)
+#     style = styleBuildings
+#     style = styleZones
+#     style = styleLocalRoad
+#     style = styleHighwayControlledAccessRoad
     
+    style = styleHighwayRoad
+    childfolder = "Highway"
+    getstyle = "&style=" + style
+    
+    url = url + getstyle + getzoom + getsize
+    for i in range(-tilenum , tilenum + 1):
+        for j in range(-tilenum , tilenum + 1):
+
+            lat, lon = utils.getPointLatLngFromPixel(int(tilezise /2) + (i * tilezise), int(tilezise /2) + (j * tilezise), org_lat, org_lon, tilezise, zoom)
+            
+            getpostition = "&center=" + str(lat) + "," + str(lon)
+            print ("X = %d; Y= %d" % (i, j), getpostition)
+            url_new = url + getpostition
+            
+            img = io.imread(url_new)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
+            directory = dest_folder + childfolder +"\\" + str(i)
+            if not os.path.exists(directory):
+                os.makedirs(directory)    
+            filename = directory + "\%d.png" % (j)
+            cv2.imwrite(filename, img)
+    print('Google OK!')
+       
 def fetch_onlinebuildingsdata(url, dest_img):
+    url = url + getpostition + getzoom + getsize
     buildings = []
     img = io.imread(url)
 
@@ -161,7 +205,7 @@ def fetch_onlinebuildingsdata(url, dest_img):
         if c == -1:
             #cv2.drawContours(fullSatelliteImg,[contours[x]],0,(0,0,255),-1)
             cnt = [contours[x]][0]
-            if cv2.contourArea(cnt) > 80:
+            if cv2.contourArea(cnt) > 20:
 #                 epsilon = 0.0001*cv2.arcLength(cnt, True)
 #                 approx = cv2.approxPolyDP(cnt, epsilon, True)
 #                 cv2.drawContours(fullSatelliteImg, [approx], -1, (0,0,255), -1)
@@ -176,6 +220,7 @@ def fetch_onlinebuildingsdata(url, dest_img):
 
 
 def fetch_onlineroaddata(url, dest_img):
+    url = url + getpostition + getzoom + getsize
     roads = []
     img = io.imread(url)
 
@@ -198,6 +243,10 @@ def fetch_onlineroaddata(url, dest_img):
             cv2.drawContours(fullSatelliteImg,[cnt],0,(0,255,0),1)
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
             roads.append(cnt)
+            
+#             cv2.imshow('In progress', dest_img)
+#             if cv2.waitKey(0) & 0xFF == ord('q'): 
+#                 cv2.destroyAllWindows() 
     return roads
 def convert_pixelarray2worldcoordinate(pointsarray, centerlat, centerlon, zoom = 18, tilezise = 640):
     gis_pointsarray = []
@@ -222,6 +271,8 @@ def create_polyline_shapefile(polylines):
     utils.write_linestring2shpfile(outputshpfile, gis_polylines)
     return outputshpfile    
 
+
+
 created_file = None
 if (style == styleBuildings) or (style == styleZones):    
     # Create shape file for buildings and zones in polygons    
@@ -234,7 +285,9 @@ else:
     
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
-    
+
+gg_folder = 'C:\Download\Data\Google\\'
+create_offlinedata(downloadUrl, lat, lon, imagesize, zoom, gg_folder, 3)
 #process_buildingsdata(tile_dir, level)
 
 cv2.imshow('Satellite', fullSatelliteImg)
