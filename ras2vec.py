@@ -115,6 +115,8 @@ elif style == styleLocalRoad:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Localroads.shp'  
 elif style == styleHighwayControlledAccessRoad:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_HighwayControlledAccess.shp'
+elif style == styleArterialRoad:
+    outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Arterialroads.shp'
     
 maptype_satellite = 'satellite'
 maptype_roadmap = 'roadmap'
@@ -148,33 +150,43 @@ def create_offlinedata(url, org_lat, org_lon, tilezise, zoom, dest_folder, tilen
     #Create URL
     getzoom = "&zoom=" + str(zoom)
     getsize = "&size=" + str(tilezise) + "x" + str(tilezise)
-#     style = styleBuildings
-#     style = styleZones
-#     style = styleLocalRoad
-#     style = styleHighwayControlledAccessRoad
-    
-    style = styleHighwayRoad
-    childfolder = "Highway"
-    getstyle = "&style=" + style
-    
-    url = url + getstyle + getzoom + getsize
-    for i in range(-tilenum , tilenum + 1):
-        for j in range(-tilenum , tilenum + 1):
+    style = "&style="
+    url = url + getzoom + getsize
+    styles = [styleBuildings, styleZones, styleHighwayRoad, styleLocalRoad, styleArterialRoad, styleHighwayControlledAccessRoad]
 
-            lat, lon = utils.getPointLatLngFromPixel(int(tilezise /2) + (i * tilezise), int(tilezise /2) + (j * tilezise), org_lat, org_lon, tilezise, zoom)
-            
-            getpostition = "&center=" + str(lat) + "," + str(lon)
-            print ("X = %d; Y= %d" % (i, j), getpostition)
-            url_new = url + getpostition
-            
-            img = io.imread(url_new)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            
-            directory = dest_folder + childfolder +"\\" + str(i)
-            if not os.path.exists(directory):
-                os.makedirs(directory)    
-            filename = directory + "\%d.png" % (j)
-            cv2.imwrite(filename, img)
+    for s in styles:
+        
+        if s == styleBuildings:
+            childfolder = "Buildings"
+        elif s == styleZones:
+            childfolder = "Zones"  
+        elif s == styleHighwayRoad:
+            childfolder = "Highways" 
+        elif s == styleLocalRoad:
+            childfolder = "LocalRoads"  
+        elif s == styleArterialRoad:
+            childfolder = "ArterialRoads"
+        elif s == styleHighwayControlledAccessRoad:
+            childfolder = "ControlledAccessRoads" 
+             
+        getstyle = style + s            
+                              
+        geturl = url + getstyle
+        for i in range(-tilenum , tilenum + 1):
+            for j in range(-tilenum , tilenum + 1):
+                lat, lon = utils.getPointLatLngFromPixel(int(tilezise /2) + (i * tilezise), int(tilezise /2) + (j * tilezise), org_lat, org_lon, tilezise, zoom)
+                getpostition = "&center=" + str(lat) + "," + str(lon)
+                print ("X = %d; Y= %d" % (i, j), getpostition)
+                url_new = geturl + getpostition
+                
+                img = io.imread(url_new)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                
+                directory = dest_folder + childfolder +"\\" + str(i)
+                if not os.path.exists(directory):
+                    os.makedirs(directory)    
+                filename = directory + "\%d.png" % (j)
+                cv2.imwrite(filename, img)
     print('Google OK!')
        
 def fetch_onlinebuildingsdata(url, dest_img):
@@ -271,7 +283,9 @@ def create_polyline_shapefile(polylines):
     utils.write_linestring2shpfile(outputshpfile, gis_polylines)
     return outputshpfile    
 
-
+gg_folder = 'C:\Download\Data\Google\\'
+create_offlinedata(downloadUrl, lat, lon, imagesize, zoom, gg_folder, 3)
+#process_buildingsdata(tile_dir, level)
 
 created_file = None
 if (style == styleBuildings) or (style == styleZones):    
@@ -286,9 +300,7 @@ else:
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
 
-gg_folder = 'C:\Download\Data\Google\\'
-create_offlinedata(downloadUrl, lat, lon, imagesize, zoom, gg_folder, 3)
-#process_buildingsdata(tile_dir, level)
+
 
 cv2.imshow('Satellite', fullSatelliteImg)
 cv2.imshow('Roadmap', fullRoadmapImg)
