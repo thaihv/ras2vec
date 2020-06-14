@@ -10,6 +10,7 @@ from skimage import io
 
 import os
 import utils
+from pathlib import Path
 
 
 tile_dir = 'C:\Download\Data\CG'
@@ -24,44 +25,55 @@ high_gray = (100,5,250)
 range_sets = ([low_yellow, high_yellow], [low_gray, high_gray])
 kernel = np.ones((3,3),np.uint8)
 
-def process_buildingsdata(data_folder_path, level = 18, tileformat = 'png'):
+def process_offlinedata(input_data_folder_path, output_data_folder_path, org_lat , org_lon, tilesize = 640, zoom = 18, tileformat = 'png'):
     # r=root, d=directories, f = files
-    for r, d, f in os.walk(data_folder_path):
+    for r, d, f in os.walk(input_data_folder_path):
         for dir_name in d:
-            if dir_name == str(level):
-                level_dir = data_folder_path + "\\"+ dir_name
+            if dir_name == str('Buildings') or dir_name == str('Zones'):
+                level_dir = input_data_folder_path + "\\"+ dir_name
                 for root, dirs, files in os.walk(level_dir):
                     for file in files:
                         if file.endswith(tileformat):
                             tile_name = os.path.join(root, file) 
-                            img = cv2.imread(os.path.join(root, file))
-                            print(img.shape)
-                            # draw gray box around image to detect edge buildings
-                            h,w = img.shape[:2]
-                            cv2.rectangle(img,(0,0),(w-1,h-1), (50,50,50),1)
-                            print('Processing ' + tile_name)
-                            cv2.imshow(tile_name, img) 
-                            # convert image to HSV
-                            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-                            ranges_coi = utils.set_display_range(hsv, range_sets)
-                            cv2.imshow('Display Ranges', ranges_coi)
-                            # remove remain noise by applying dilation then erosion or vice versa 
-                            walls = utils.remove_noise(ranges_coi, kernel)
-                            cv2.imshow('Walls', walls)
-                            # find contours and create respective polygons 
-                            imgResult, r_polygons = utils.find_rasterpolygons(img, walls)
-                            cv2.imshow('Buildings', imgResult)
-#                             ds = gdal.Open(tile_name)
-#                             for p in r_polygons:
-#                                 print("Polygon:")
-#                                 for j in p:
-#                                     xp, yp = utils.pixel2coord(ds, int(j[0][0]), int(j[0][1]))
-#                                     print(int(j[0][0]), int(j[0][1]), "World --->", xp, yp)
-                            # Exiting the window if 'q' is pressed on the keyboard. 
-                            if cv2.waitKey(0) & 0xFF == ord('q'): 
-                                cv2.destroyAllWindows() 
+                            X = os.path.basename(os.path.dirname(tile_name))
+                            Y = os.path.splitext(os.path.split(tile_name)[1])[0]
+                            print('Processing ' + tile_name + ": --> " + X + ";" + Y)
+                            building_polygons = utils.fetch_buildingsdata(tile_name)
+                            i = int(X)
+                            j = int(Y)
+                            lat, lon = utils.getPointLatLngFromPixel(int(tilesize /2) + (i * tilesize), int(tilesize /2) + (j * tilesize), org_lat, org_lon, tilesize, zoom)
+                            gis_polygons = convert_pixelarray2worldcoordinate(building_polygons, lat , lon, zoom)
+                            
+                            directory = output_data_folder_path + dir_name + "\\"
+                            if not os.path.exists(directory):
+                                os.makedirs(directory)  
+                            outputshpfile = directory + X + '_' + Y + '_' + dir_name +'.shp'
+                            print('Processing ' + tile_name + ": --> " + outputshpfile)
+                            utils.write_polygons2shpfile(outputshpfile, gis_polygons)
+                            #utils.display_shpinfo(outputshpfile)
 
+#             else:
+#                 level_dir = input_data_folder_path + "\\"+ dir_name
+#                 for root, dirs, files in os.walk(level_dir):
+#                     for file in files:
+#                         if file.endswith(tileformat):
+#                             tile_name = os.path.join(root, file) 
+#                             X = os.path.basename(os.path.dirname(tile_name))
+#                             Y = os.path.splitext(os.path.split(tile_name)[1])[0]
+#                             print('Processing ' + tile_name + ": --> " + X + ";" + Y)
+#                             roads = utils.fetch_roadsdata(tile_name)
+#                             i = int(X)
+#                             j = int(Y)
+#                             lat, lon = utils.getPointLatLngFromPixel(int(tilesize /2) + (i * tilesize), int(tilesize /2) + (j * tilesize), org_lat, org_lon, tilesize, zoom)
+#                             gis_polylines = convert_pixelarray2worldcoordinate(roads, lat , lon, zoom)
+#                             directory = output_data_folder_path + dir_name + "\\"
+#                             if not os.path.exists(directory):
+#                                 os.makedirs(directory)  
+#                             outputshpfile = directory + X + '_' + Y + '_' + dir_name +'.shp'
+#                             print('Processing ' + tile_name + ": --> " + outputshpfile)
+#                             utils.write_linestring2shpfile(outputshpfile, gis_polylines)
 
+                            
 styleBuildings = quote('feature:landscape.man_made|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 #full road is used for creating zones
 styleZones = quote('feature:road|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
@@ -104,7 +116,7 @@ lon = 105.7887625
 zoom = 18
 imagesize = 640
 
-style = styleLocalRoad
+style = styleBuildings
 
 if style == styleBuildings:     
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Buildings.shp'
@@ -240,23 +252,22 @@ def create_polyline_shapefile(polylines):
     utils.write_linestring2shpfile(outputshpfile, gis_polylines)
     return outputshpfile    
 
-gg_folder = 'C:\Download\Data\Google\\'
-#process_buildingsdata(tile_dir, level)
-
-created_file = None
-if (style == styleBuildings) or (style == styleZones):    
-    # Create shape file for buildings and zones in polygons    
-    building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
-    created_file = create_polygons_shapefile(building_polygons)
-else:
-    # Create shape file for roads in poly lines 
-    roads = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
-    created_file = create_polyline_shapefile(roads)
+# created_file = None
+# if (style == styleBuildings) or (style == styleZones):    
+#     # Create shape file for buildings and zones in polygons    
+#     building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
+#     created_file = create_polygons_shapefile(building_polygons)
+# else:
+#     # Create shape file for roads in poly lines 
+#     roads = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
+#     created_file = create_polyline_shapefile(roads)
     
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
 
-
+input_data_folder_path = 'C:\Download\Data\Google\\'
+output_data_folder_path= 'C:\Download\Data\Output\\'
+process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
 
 cv2.imshow('Satellite', fullSatelliteImg)
 cv2.imshow('Roadmap', fullRoadmapImg)

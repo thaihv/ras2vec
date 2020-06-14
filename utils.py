@@ -9,6 +9,7 @@ import math
 import requests
 
 import pyproj
+from skimage import io
 import json
 from shapely.geometry import Polygon, LineString
 import shapely.ops as ops
@@ -53,6 +54,62 @@ def find_rasterpolygons(dest_img, features_img):
     for cnt in contours:
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
     return dest_img, polygons
+def fetch_buildingsdata(filename):
+    buildings = []
+    img = io.imread(filename)
+
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    #print(img.shape)
+    h,w = img.shape[:2]
+    cv2.rectangle(img,(0,0),(w-1,h-1), (0,0,255),1)
+
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    cv2.imshow('HSV', img)
+    
+    low = (0,11,0)
+    high = (179,255,255)
+    # create masks
+    mask = cv2.inRange(hsv, low, high)
+    cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
+    contours, hier = cv2.findContours(mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    
+    for x in range(len(contours)):
+        print()
+        # if a contour has not contours inside of it, draw the shape filled
+        c = hier[0][x][2]
+        if c == -1:
+            #cv2.drawContours(fullSatelliteImg,[contours[x]],0,(0,0,255),-1)
+            cnt = [contours[x]][0]
+            if cv2.contourArea(cnt) > 20:
+#                 epsilon = 0.0001*cv2.arcLength(cnt, True)
+#                 approx = cv2.approxPolyDP(cnt, epsilon, True)
+#                 cv2.drawContours(fullSatelliteImg, [approx], -1, (0,0,255), -1)
+#                 cv2.drawContours(fullRoadmapImg, [approx], -1, (0,0,255), -1)
+#                 buildings.append(approx)
+                buildings.append(cnt)             
+    return buildings
+def fetch_roadsdata(url):
+    roads = []
+    img = io.imread(url)
+
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    cv2.imshow('HSV', img)
+    
+    low = (0,11,0)
+    high = (179,255,255)
+    # create masks
+    mask = cv2.inRange(hsv, low, high)
+    cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
+    
+    # Create skeleton for lines to get more accurately
+    thinned = cv2.ximgproc.thinning(mask)
+    
+    contours, hier = cv2.findContours(thinned,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    # draw the outline of all contours
+    for cnt in contours:
+            roads.append(cnt)
+    return roads
 def display_shpinfo(inputfile):
     with shapefile.Reader(inputfile) as shp:
         # read information from 1 object
@@ -156,7 +213,7 @@ def write_polygons2shpfile(outputfile, polygons):
                 bJointly = 1  
             #Simplify and create centroid
             gpoly = gpoly.simplify(0.000005)
-            centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))             
+            #centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))             
             coords = gpoly.exterior.coords
             outpoly = []
             for pp in list(coords):
@@ -166,13 +223,13 @@ def write_polygons2shpfile(outputfile, polygons):
             # Area
             area = calculate_polygon_area_in_m2(gpoly)
             # Center point info
-            results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
-            r = results['results'][0]['formatted_address']
-            # Name
-            strJson = json.dumps(r).encode("utf-8")
+#             results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
+#             r = results['results'][0]['formatted_address']
+#             # Name
+#             strJson = json.dumps(r).encode("utf-8")
             
             #print(strJson)
-            shp.record("polygon " + str(n + 1), area, bJointly, r)
+            shp.record("polygon " + str(n + 1), area, bJointly, "Info")
             print("...", end = '')
             
     add_prj = open("%s.prj" % outputfile[:-4], "w")
@@ -182,7 +239,7 @@ def write_polygons2shpfile(outputfile, polygons):
     add_prj.write(epsg)
     add_prj.close()
     print('Done! ', outputfile)
-    write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
+    #write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
 
 def write_linestring2shpfile(outputfile, lines):
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYLINE, encoding="utf8") as shp:
