@@ -54,7 +54,7 @@ def find_rasterpolygons(dest_img, features_img):
     for cnt in contours:
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
     return dest_img, polygons
-def fetch_buildingsdata(filename):
+def fetch_buildings_or_zonesdata(filename):
     buildings = []
     img = io.imread(filename)
 
@@ -81,12 +81,12 @@ def fetch_buildingsdata(filename):
             #cv2.drawContours(fullSatelliteImg,[contours[x]],0,(0,0,255),-1)
             cnt = [contours[x]][0]
             if cv2.contourArea(cnt) > 20:
-#                 epsilon = 0.0001*cv2.arcLength(cnt, True)
-#                 approx = cv2.approxPolyDP(cnt, epsilon, True)
+                epsilon = 0.0001*cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
 #                 cv2.drawContours(fullSatelliteImg, [approx], -1, (0,0,255), -1)
 #                 cv2.drawContours(fullRoadmapImg, [approx], -1, (0,0,255), -1)
-#                 buildings.append(approx)
-                buildings.append(cnt)             
+                buildings.append(approx)
+                #buildings.append(cnt)             
     return buildings
 def fetch_roadsdata(url):
     roads = []
@@ -181,8 +181,15 @@ def write_polygons2shpfile(outputfile, polygons):
         multipolygon.append(gpoly)
     polygon_collection = geometry.MultiPolygon(multipolygon)
     bbox = polygon_collection.bounds
-    bbpoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+    # Case bbox not a polygon because collection is a line (we were not check it), try catch 
+    try:
+        bbpoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+    except:
+        return
+    
     boundarylines = LineString(bbpoly.exterior.coords)
+#     bbpoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+#     boundarylines = LineString(bbpoly.exterior.coords)
     
     centerpoints = []
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYGON, encoding="utf8") as shp:
