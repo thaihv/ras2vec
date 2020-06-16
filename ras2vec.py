@@ -6,7 +6,7 @@ Created on May 11, 2020
 import cv2
 import numpy as np     
 from requests.utils import quote
-from skimage import io
+from skimage import io, img_as_bool,color, morphology
 
 import os
 import utils
@@ -99,7 +99,7 @@ lon = 105.7887625
 zoom = 18
 imagesize = 640
 
-style = styleBuildings
+style = styleHighwayRoad
 
 if style == styleBuildings:     
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Buildings.shp'
@@ -182,7 +182,6 @@ def fetch_onlinebuildingsdata(url, dest_img):
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
     return buildings
 
-
 def fetch_onlineroaddata(url, dest_img):
     url = url + getpostition + getzoom + getsize
     roads = []
@@ -198,19 +197,69 @@ def fetch_onlineroaddata(url, dest_img):
     mask = cv2.inRange(hsv, low, high)
     cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
     
+    
+    
+#     size = np.size(mask)
+#     skel = np.zeros(mask.shape, np.uint8)
+#     element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
+#     
+#     # Repeat steps 2-4
+#     while True:
+#         #Step 2: Open the image
+#         open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, element)
+#         #Step 3: Substract open from the original image
+#         temp = cv2.subtract(mask, open)
+#         #Step 4: Erode the original image and refine the skeleton
+#         eroded = cv2.erode(mask, element)
+#         skel = cv2.bitwise_or(skel,temp)
+#         mask = eroded.copy()
+#         # Step 5: If there are no white pixels left ie.. the image has been completely eroded, quit the loop
+#         if cv2.countNonZero(mask)==0:
+#             break
+# 
+# 
+#     cv2.imshow("Skeleton",skel)
+#     cv2.waitKey(0)
+#     cv2.destroyAllWindows()
+
     # Create skeleton for lines to get more accurately
     thinned = cv2.ximgproc.thinning(mask)
     
-    contours, hier = cv2.findContours(thinned,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    interections = utils.getSkeletonIntersection(thinned)
+    #print("INTERSECTION", interections)
+   
+    #contours, hier = cv2.findContours(thinned,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hier = cv2.findContours(thinned,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+
+#     for x in range(len(contours)):
+#         # if a contour has not contours inside of it, draw the shape filled
+#         c = hier[0][x][2]
+#         if c == -1:
+#             cnt = [contours[x]][0]
+#             #cv2.drawContours(fullSatelliteImg,[cnt],0,(0,255,0),1)
+#             roads.append(cnt)
+#             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
+#         else:
+#             cnt = [contours[x]][0]
+#             cv2.drawContours(dest_img,[cnt],0,(0,0,255),1)
+#             
+#         cv2.imshow('In progress', dest_img)
+#         if cv2.waitKey(0) & 0xFF == ord('q'): 
+#             cv2.destroyAllWindows()                        
+    
     # draw the outline of all contours
-    for cnt in contours:
+    #for cnt in contours:
+    for n, cnt in enumerate(contours):
             cv2.drawContours(fullSatelliteImg,[cnt],0,(0,255,0),1)
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
+            print('Contours--->' + str(n), cnt)
             roads.append(cnt)
-            
-#             cv2.imshow('In progress', dest_img)
-#             if cv2.waitKey(0) & 0xFF == ord('q'): 
-#                 cv2.destroyAllWindows() 
+    # Draw interections
+    for n, intersect in enumerate(interections):
+        cv2.circle(fullSatelliteImg, intersect, 3, (0,0,255), 3 )
+        cv2.circle(dest_img, intersect, 3, (0,0,255), 3 )
+
     return roads
 def convert_pixelarray2worldcoordinate(pointsarray, centerlat, centerlon, zoom = 18, tilezise = 640):
     gis_pointsarray = []
@@ -235,22 +284,22 @@ def create_polyline_shapefile(polylines):
     utils.write_linestring2shpfile(outputshpfile, gis_polylines)
     return outputshpfile    
 
-# created_file = None
-# if (style == styleBuildings) or (style == styleZones):    
-#     # Create shape file for buildings and zones in polygons    
-#     building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
-#     created_file = create_polygons_shapefile(building_polygons)
-# else:
-#     # Create shape file for roads in poly lines 
-#     roads = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
-#     created_file = create_polyline_shapefile(roads)
+created_file = None
+if (style == styleBuildings) or (style == styleZones):    
+    # Create shape file for buildings and zones in polygons    
+    building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
+    created_file = create_polygons_shapefile(building_polygons)
+else:
+    # Create shape file for roads in poly lines 
+    roads = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
+    created_file = create_polyline_shapefile(roads)
     
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
 
-input_data_folder_path = 'C:\Download\Data\Google\\'
-output_data_folder_path= 'C:\Download\Data\Output\\'
-process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
+# input_data_folder_path = 'C:\Download\Data\Google\\'
+# output_data_folder_path= 'C:\Download\Data\Output\\'
+# process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
 
 cv2.imshow('Satellite', fullSatelliteImg)
 cv2.imshow('Roadmap', fullRoadmapImg)
