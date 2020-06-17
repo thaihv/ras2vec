@@ -6,11 +6,15 @@ Created on May 11, 2020
 import cv2
 import numpy as np     
 from requests.utils import quote
-from skimage import io, img_as_bool,color, morphology
-
+from skimage import io, filters
+from skimage.morphology import skeletonize, thin, medial_axis
+from scipy import ndimage 
+import matplotlib.pyplot as plt
+import time
 import os
 import utils
 from pathlib import Path
+from skimage.util import invert
 
 
 tile_dir = 'C:\Download\Data\CG'
@@ -46,12 +50,18 @@ def process_offlinedata(input_data_folder_path, output_data_folder_path, org_lat
                         lat, lon = utils.getPointLatLngFromPixel(int(tilesize /2) + (i * tilesize), int(tilesize /2) + (j * tilesize), org_lat, org_lon, tilesize, zoom)
                         if dir_name == str('Buildings') or dir_name == str('Zones'):                            
                             building_polygons = utils.fetch_buildings_or_zonesdata(tile_name)
-                            gis_polygons = convert_pixelarray2worldcoordinate(building_polygons, lat , lon, zoom)
+                            gis_polygons = convert_pixelarrays2worldcoordinate(building_polygons, lat , lon, zoom)
                             utils.write_polygons2shpfile(outputshpfile, gis_polygons)
                         elif dir_name == str('Highways') or dir_name == str('LocalRoads') or dir_name == str('ArterialRoads') or dir_name == str('ControlledAccessRoads'):
-                            roads = utils.fetch_roadsdata(tile_name)
-                            gis_polylines = convert_pixelarray2worldcoordinate(roads, lat , lon, zoom)
-                            utils.write_linestring2shpfile(outputshpfile, gis_polylines)
+                            roads, jointpoints = utils.fetch_roadsdata(tile_name)
+                            
+                            gis_polylines = convert_pixelarrays2worldcoordinate(roads, lat , lon, zoom)
+                            if jointpoints is not None:
+                                intersects = convert_a_pixel_list2worldcoordinate(jointpoints, lat , lon, zoom)
+                            if intersects is not None:
+                                utils.write_linestring2shpfile(outputshpfile, gis_polylines, None)
+                            else:
+                                utils.write_linestring2shpfile(outputshpfile, gis_polylines, None)
                         
                         #utils.display_shpinfo(outputshpfile)
 
@@ -196,94 +206,89 @@ def fetch_onlineroaddata(url, dest_img):
     # create masks
     mask = cv2.inRange(hsv, low, high)
     cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
-    
-    
-    
-#     size = np.size(mask)
-#     skel = np.zeros(mask.shape, np.uint8)
-#     element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
-#     
-#     # Repeat steps 2-4
-#     while True:
-#         #Step 2: Open the image
-#         open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, element)
-#         #Step 3: Substract open from the original image
-#         temp = cv2.subtract(mask, open)
-#         #Step 4: Erode the original image and refine the skeleton
-#         eroded = cv2.erode(mask, element)
-#         skel = cv2.bitwise_or(skel,temp)
-#         mask = eroded.copy()
-#         # Step 5: If there are no white pixels left ie.. the image has been completely eroded, quit the loop
-#         if cv2.countNonZero(mask)==0:
-#             break
-# 
-# 
-#     cv2.imshow("Skeleton",skel)
-#     cv2.waitKey(0)
-#     cv2.destroyAllWindows()
 
     # Create skeleton for lines to get more accurately
-    thinned = cv2.ximgproc.thinning(mask)
+    #thinned = cv2.ximgproc.thinning(mask) # Not good
     
-    interections = utils.getSkeletonIntersection(thinned)
-    #print("INTERSECTION", interections)
-   
-    #contours, hier = cv2.findContours(thinned,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contours, hier = cv2.findContours(thinned,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-
-#     for x in range(len(contours)):
-#         # if a contour has not contours inside of it, draw the shape filled
-#         c = hier[0][x][2]
-#         if c == -1:
-#             cnt = [contours[x]][0]
-#             #cv2.drawContours(fullSatelliteImg,[cnt],0,(0,255,0),1)
-#             roads.append(cnt)
-#             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
-#         else:
-#             cnt = [contours[x]][0]
-#             cv2.drawContours(dest_img,[cnt],0,(0,0,255),1)
-#             
-#         cv2.imshow('In progress', dest_img)
-#         if cv2.waitKey(0) & 0xFF == ord('q'): 
-#             cv2.destroyAllWindows()                        
+    thinned = mask > filters.threshold_otsu(mask)
     
+    
+    
+    #thinned, distance = medial_axis(thinned, return_distance=True)
+    #thinned = thin(thinned)
+    #thinned = skeletonize(thinned)
+    #thinned = thinned.astype(np.uint8)
+    
+    thinned = skeletonize(thinned, method='lee')
+    # display results
+#     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(8, 4), sharex=True, sharey=True)
+#      
+#     ax = axes.ravel()
+#     ax[0].imshow(mask)
+#     ax[0].axis('off')
+#     ax[0].set_title('original', fontsize=20)
+#      
+#     ax[1].imshow(thinned)
+#     ax[1].axis('off')
+#     ax[1].set_title('skeleton', fontsize=20)
+#     
+#     fig.tight_layout()
+#     plt.show()
+
+    intersections = utils.getSkeletonIntersection(thinned)
+    contours, hier = cv2.findContours(thinned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
     # draw the outline of all contours
-    #for cnt in contours:
     for n, cnt in enumerate(contours):
             cv2.drawContours(fullSatelliteImg,[cnt],0,(0,255,0),1)
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
             print('Contours--->' + str(n), cnt)
             roads.append(cnt)
+#             epsilon = 0.001*cv2.arcLength(cnt, True)
+#             approx = cv2.approxPolyDP(cnt, epsilon, False)
+#             cv2.drawContours(fullSatelliteImg,[approx],0,(0,255,0),1)
+#             cv2.drawContours(dest_img,[approx],0,(0,255,0),1)
+#             roads.append(approx)
     # Draw interections
-    for n, intersect in enumerate(interections):
-        cv2.circle(fullSatelliteImg, intersect, 3, (0,0,255), 3 )
-        cv2.circle(dest_img, intersect, 3, (0,0,255), 3 )
+    for n, section in enumerate(intersections):
+        cv2.circle(fullSatelliteImg, section, 3, (0,0,255), 3 )
+        cv2.circle(dest_img, section, 3, (0,0,255), 3 )
 
-    return roads
-def convert_pixelarray2worldcoordinate(pointsarray, centerlat, centerlon, zoom = 18, tilezise = 640):
+    return roads, intersections
+def convert_pixelarrays2worldcoordinate(pointsarrays, centerlat, centerlon, zoom = 18, tilezise = 640):
     gis_pointsarray = []
     # Calculate next tile from X, Y = (320,320) as tile size = 640 
     newLatCenter, newLonCenter = utils.getPointLatLngFromPixel(320, 320 + 640, centerlat, centerlon, tilezise, zoom)
     print ("Center Info: Tile (X,Y) is centered at [%s , %s] AND (X, Y + 1) is centered at [%s , %s]" % (centerlat, centerlon, newLatCenter, newLonCenter))
     
-    for n, p in enumerate(pointsarray):
+    for n, p in enumerate(pointsarrays):
         points = []
         for j in p:
             lat, lon = utils.getPointLatLngFromPixel(int(j[0][0]),int(j[0][1]), centerlat, centerlon, tilezise, zoom)
             points.append([lon, lat])
         gis_pointsarray.append(points)
     return gis_pointsarray
+
+def convert_a_pixel_list2worldcoordinate(pointlist, centerlat, centerlon, zoom = 18, tilezise = 640):
+    pointsarray = []
+    for n, p in enumerate(pointlist):
+        print ("X:Y:=", p[0],p[1])
+        lat, lon = utils.getPointLatLngFromPixel(p[0],p[1], centerlat, centerlon, tilezise, zoom)
+        print ("[lon, lat]:=", lon, lat)
+        pointsarray.append([lon, lat])
+    return pointsarray
     
 def create_polygons_shapefile(polygons):    
-    gis_polygons = convert_pixelarray2worldcoordinate(polygons, lat , lon, zoom)
+    gis_polygons = convert_pixelarrays2worldcoordinate(polygons, lat , lon, zoom)
     utils.write_polygons2shpfile(outputshpfile, gis_polygons)
     return outputshpfile
-def create_polyline_shapefile(polylines):    
-    gis_polylines = convert_pixelarray2worldcoordinate(polylines, lat , lon, zoom)
-    utils.write_linestring2shpfile(outputshpfile, gis_polylines)
+def create_polyline_shapefile(polylines, intersections):    
+    gis_polylines = convert_pixelarrays2worldcoordinate(polylines, lat , lon, zoom)
+    intersectpoints = convert_a_pixel_list2worldcoordinate(intersections, lat , lon, zoom)
+    print ("INTER : " , intersectpoints)
+    utils.write_linestring2shpfile(outputshpfile, gis_polylines, intersectpoints)
     return outputshpfile    
-
+# Run test for get data online
 created_file = None
 if (style == styleBuildings) or (style == styleZones):    
     # Create shape file for buildings and zones in polygons    
@@ -291,15 +296,20 @@ if (style == styleBuildings) or (style == styleZones):
     created_file = create_polygons_shapefile(building_polygons)
 else:
     # Create shape file for roads in poly lines 
-    roads = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
-    created_file = create_polyline_shapefile(roads)
+    roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
+    created_file = create_polyline_shapefile(roads, intersections)
     
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
 
+
+# Run test for get data offline
 # input_data_folder_path = 'C:\Download\Data\Google\\'
 # output_data_folder_path= 'C:\Download\Data\Output\\'
+# 
+# start_time = time.time()
 # process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
+# print("--- %s seconds ---" % (time.time() - start_time))
 
 cv2.imshow('Satellite', fullSatelliteImg)
 cv2.imshow('Roadmap', fullRoadmapImg)

@@ -9,9 +9,13 @@ import math
 import requests
 
 import pyproj
-from skimage import io
+from skimage import io, filters
+from skimage.morphology import skeletonize
+import numpy as np
+from shapely.ops import split
+
 import json
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import Polygon, LineString, Point, MultiLineString
 import shapely.ops as ops
 import shapely.geometry as geometry
 from functools import partial
@@ -103,13 +107,25 @@ def fetch_roadsdata(url):
     cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
     
     # Create skeleton for lines to get more accurately
-    thinned = cv2.ximgproc.thinning(mask)
+#     thinned = cv2.ximgproc.thinning(mask)
+#     contours, hier = cv2.findContours(thinned,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    try:
+        thinned = mask > filters.threshold_otsu(mask)
+    except:
+        return roads, None
+
+    #thinned, distance = medial_axis(thinned, return_distance=True)
+    thinned = skeletonize(thinned, method='lee')
+#     thinned = skeletonize(thinned)
+#     thinned = thinned.astype(np.uint8)
     
-    contours, hier = cv2.findContours(thinned,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    interections = getSkeletonIntersection(thinned)
+    contours, hier = cv2.findContours(thinned,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)    
     # draw the outline of all contours
     for cnt in contours:
             roads.append(cnt)
-    return roads
+    return roads, interections
 def display_shpinfo(inputfile):
     with shapefile.Reader(inputfile) as shp:
         # read information from 1 object
@@ -154,6 +170,45 @@ def calculate_polygon_area_in_m2(geom ):
     geom_area = ops.transform(partial(pyproj.transform, pyproj.Proj(init='EPSG:4326'), pyproj.Proj(proj='aea', lat1=geom.bounds[1], lat2=geom.bounds[3])), geom)
     return geom_area.area
 
+def cut(line, distance):
+    # Cuts a line in two at a distance from its starting point
+    # This is taken from shapely manual
+    if distance <= 0.0 or distance >= line.length:
+        return [LineString(line)]
+    coords = list(line.coords)
+    for i, p in enumerate(coords):
+        pd = line.project(Point(p))
+        if pd == distance:
+            return [
+                LineString(coords[:i+1]),
+                LineString(coords[i:])]
+        if pd > distance:
+            cp = line.interpolate(distance)
+            return [
+                LineString(coords[:i] + [(cp.x, cp.y)]),
+                LineString([(cp.x, cp.y)] + coords[i:])]
+
+def split_line_with_points(line, points):
+    """Splits a line string in several segments considering a list of points.
+
+    The points used to cut the line are assumed to be in the line string 
+    and given in the order of appearance they have in the line string.
+
+    >>> line = LineString( [(1,2), (8,7), (4,5), (2,4), (4,7), (8,5), (9,18), 
+    ...        (1,2),(12,7),(4,5),(6,5),(4,9)] )
+    >>> points = [Point(2,4), Point(9,18), Point(6,5)]
+    >>> [str(s) for s in split_line_with_points(line, points)]
+    ['LINESTRING (1 2, 8 7, 4 5, 2 4)', 'LINESTRING (2 4, 4 7, 8 5, 9 18)', 'LINESTRING (9 18, 1 2, 12 7, 4 5, 6 5)', 'LINESTRING (6 5, 4 9)']
+
+    """
+    segments = []
+    current_line = line
+    for p in points:
+        d = current_line.project(p)
+        seg, current_line = cut(current_line, d)
+        segments.append(seg)
+    segments.append(current_line)
+    return segments
 
 def write_points2shpfile(outputfile, points):
     with shapefile.Writer(outputfile, shapeType=shapefile.POINT, encoding="utf8") as shp:
@@ -180,15 +235,16 @@ def write_polygons2shpfile(outputfile, polygons):
         gpoly = Polygon(p)
         multipolygon.append(gpoly)
     polygon_collection = geometry.MultiPolygon(multipolygon)
-    bbox = polygon_collection.bounds
-    # Case bbox not a polygon because collection is a line (we were not check it), try catch 
+    # BBox to calculate jointly parts
+    realbbox = polygon_collection.bounds
+    # Case realbbox not a polygon because collection is a line (we were not check it), try catch 
     try:
-        bbpoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+        bbpoly = Polygon([(realbbox[0],realbbox[1]), (realbbox[0],realbbox[3]), (realbbox[2],realbbox[3]), (realbbox[2],realbbox[1]), (realbbox[0],realbbox[1])])
     except:
         return
     
     boundarylines = LineString(bbpoly.exterior.coords)
-#     bbpoly = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+#     bbpoly = Polygon([(realbbox[0],realbbox[1]), (realbbox[0],realbbox[3]), (realbbox[2],realbbox[3]), (realbbox[2],realbbox[1]), (realbbox[0],realbbox[1])])
 #     boundarylines = LineString(bbpoly.exterior.coords)
     
     centerpoints = []
@@ -198,7 +254,7 @@ def write_polygons2shpfile(outputfile, polygons):
         shp.field('Jointly', 'L')
         shp.field('Address', 'C', size=250)
         
-        # first one, add bbox to shape file
+        # first one, add realbbox to shape file
         coords = bbpoly.exterior.coords
         outpoly = []
         for pp in list(coords):
@@ -248,15 +304,48 @@ def write_polygons2shpfile(outputfile, polygons):
     print('Done! ', outputfile)
     #write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
 
-def write_linestring2shpfile(outputfile, lines):
+def write_linestring2shpfile(outputfile, lines, interections):
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYLINE, encoding="utf8") as shp:
         shp.field('Name', 'C', size=40)
-        for n, l in enumerate(lines):
-            print(l)
-            outlines = []
-            outlines.append(l)
-            shp.line(outlines)
-            shp.record('linestring ' + str(n))
+        intersect_points = []
+        
+        if interections is not None:
+            for p in interections:
+                intersect_points.append(Point(p))
+            for i, l in enumerate(lines):
+                print(l)
+                print("---->")
+                glinestring = LineString(l)
+                print (glinestring.is_ring)
+                segments = split_line_with_points(glinestring, intersect_points)
+                for n, s in enumerate(segments):
+                    print(s)
+                    glinestring = s.simplify(0.000003)
+                    #glinestring = s
+                    outlines = []
+                    for pp in glinestring.coords:
+                        outlines.append([pp[0],pp[1]])
+                    shp.line([outlines])
+                    shp.record('linestring ' + str(i) + '_' + str(n))
+
+        else:
+            for i, l in enumerate(lines):
+                try:
+                    glinestring = LineString(l)
+                    glinestring = glinestring.simplify(0.000003)
+                    outlines = []
+                    for pp in glinestring.coords:
+                        outlines.append([pp[0],pp[1]])
+                    shp.line([outlines])
+                    shp.record('linestring ' + str(i))
+                except:
+                    return
+
+#             outlines = []
+#             outlines.append(l)
+#             shp.line(outlines)
+#             shp.record('linestring ' + str(i))
+            
     add_prj = open("%s.prj" % outputfile[:-4], "w")
     proj = osr.SpatialReference()
     proj.ImportFromEPSG(4326)
