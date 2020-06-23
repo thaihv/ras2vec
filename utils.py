@@ -20,6 +20,7 @@ import shapely.ops as ops
 import shapely.geometry as geometry
 from functools import partial
 from osgeo import osr
+from _pylief import NONE
 
 
 def set_display_range(inputimage, ranges):
@@ -127,7 +128,7 @@ def fetch_roadsdata(url):
             roads.append(cnt)
     return roads, interections
 def display_shpinfo(inputfile):
-    with shapefile.Reader(inputfile) as shp:
+    with shapefile.Reader(inputfile, encoding = "utf-8") as shp:
         # read information from 1 object
         print("The 1st Object:")
         for name in dir(shp.shape(0)):
@@ -155,6 +156,7 @@ def display_shpinfo(inputfile):
         # Reading records 
         rec = records[0]
         dct = rec.as_dict()
+        dct = {k: str(v).encode("utf-8") for k,v in dct.items()}
         print('Attributes of record with oid ',rec.oid)
         print(sorted(dct.items()))
         # Reading Geometry and Records Simultaneously
@@ -164,7 +166,33 @@ def display_shpinfo(inputfile):
 #         geoj = shpRec.__geo_interface__
 #         geoj["type"]
 #         print('All in GEOJSON', geoj)
+def get_metadata_dowload_info(adm_id):
+    lat = None
+    lon = None
+    tilenum = None
+    inputfile = 'data\VNM_adm1.shp'
+    areaTile640 = 126546.188215 # Area pre-calculated at tilezise = 640 and zoom = 18
 
+    with shapefile.Reader(inputfile, encoding = "utf-8") as shp:
+        print('Bbox From the whole:', shp.bbox)
+        print('Fields:', shp.fields)
+        records = shp.records()
+        
+        for i in range (len(records)):
+            rec = records[i]
+            rec = rec['ID_1']
+            if rec == adm_id :
+                bbox = shp.shape(i).bbox
+                lon = (bbox[0] + bbox[2]) / 2
+                lat = (bbox[1] + bbox[3]) / 2
+                pbbox = Polygon([(bbox[0],bbox[1]), (bbox[0],bbox[3]), (bbox[2],bbox[3]), (bbox[2],bbox[1]), (bbox[0],bbox[1])])
+
+                totalArea = calculate_polygon_area_in_m2(pbbox)
+                tilenum = int(totalArea / areaTile640)
+                tilenum = int(tilenum / 2)
+                break;
+        print ('Center Lat/lon of Province ID = % s is (%s,%s) and number of tile is %s' % (adm_id, lat, lon, tilenum))
+    return lat, lon, tilenum
 
 def calculate_polygon_area_in_m2(geom ):
     geom_area = ops.transform(partial(pyproj.transform, pyproj.Proj(init='EPSG:4326'), pyproj.Proj(proj='aea', lat1=geom.bounds[1], lat2=geom.bounds[3])), geom)

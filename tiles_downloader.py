@@ -19,8 +19,8 @@ styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on
 
 downloadUrl = "http://maps.googleapis.com/maps/api/staticmap?sensor=false&maptype=roadmap&style=visibility:off&key=AIzaSyDcBFbe71HaCJHzWEHiuhHfhPPY9URP2GU"
 # Test My Dinh
-lat = 21.0312246
-lon = 105.7646925
+# lat = 21.0312246
+# lon = 105.7646925
 zoom = 18
 tilezise = 640
 
@@ -68,8 +68,8 @@ def create_offlinedata(url, org_lat, org_lon, tilezise, zoom, dest_folder, tilen
                 cv2.imwrite(filename, img)
     print('Download Google Static Map OK!')
 
-utils.display_shpinfo('data\VNM_adm1.shp')
+#id = 23 --> Ha noi
+lat, lon, tilenum = utils.get_metadata_dowload_info(23)
 
-
-# gg_folder = 'C:\Download\Data\GoogleTest\\'
-# create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 3)
+gg_folder = 'C:\Download\Data\Hanoi\\'
+create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 10)

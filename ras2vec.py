@@ -61,12 +61,9 @@ def process_offlinedata(input_data_folder_path, output_data_folder_path, org_lat
                             roads, jointpoints = utils.fetch_roadsdata(tile_name)
                             
                             gis_polylines = convert_pixelarrays2worldcoordinate(roads, lat , lon, zoom)
-                            if jointpoints is not None:
-                                intersects = convert_a_pixel_list2worldcoordinate(jointpoints, lat , lon, zoom)
-                            if intersects is not None:
-                                utils.write_linestring2shpfile(outputshpfile, gis_polylines, None)
-                            else:
-                                utils.write_linestring2shpfile(outputshpfile, gis_polylines, None)
+
+                            utils.write_linestring2shpfile(outputshpfile, gis_polylines, None)
+
                         
                         #utils.display_shpinfo(outputshpfile)
 
@@ -100,8 +97,14 @@ styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on
 # lon = 105.781349
 
 #test highway
-lat = 21.0813699
-lon = 105.7887625
+# lat = 21.0813699
+# lon = 105.7887625
+
+# Ha Noi Center
+lat = 20.97503280639646
+lon = 105.65287399291995
+
+
 # highway next Y + 1
 # lat = 21.07816645652331
 # lon = 105.7887625
@@ -318,6 +321,7 @@ def convert_a_pixel_list2worldcoordinate(pointlist, centerlat, centerlon, zoom =
         print ("[lon, lat]:=", lon, lat)
         pointsarray.append([lon, lat])
     return pointsarray
+
 def calculate_bbox_tiles(lat, lon, tilesize, zoom):
     
     minx = 0
@@ -349,27 +353,27 @@ def create_polyline_shapefile(polylines, intersections):
     utils.write_linestring2shpfile(outputshpfile, gis_polylines, intersectpoints)
     return outputshpfile    
 # Run test for get data online
-created_file = None
-if (style == styleBuildings) or (style == styleZones):    
-    # Create shape file for buildings and zones in polygons    
-    building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
-    created_file = create_polygons_shapefile(building_polygons)
-else:
-    # Create shape file for roads in poly lines 
-    roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
-    created_file = create_polyline_shapefile(roads, intersections)
+# created_file = None
+# if (style == styleBuildings) or (style == styleZones):    
+#     # Create shape file for buildings and zones in polygons    
+#     building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
+#     created_file = create_polygons_shapefile(building_polygons)
+# else:
+#     # Create shape file for roads in poly lines 
+#     roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
+#     created_file = create_polyline_shapefile(roads, intersections)
     
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
 
 
 # Run test for get data offline
-# input_data_folder_path = 'C:\Download\Data\Google\\'
-# output_data_folder_path= 'C:\Download\Data\Output\\'
-#    
-# start_time = time.time()
-# process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
-# print("--- %s seconds ---" % (time.time() - start_time))
+input_data_folder_path = 'C:\Download\Data\Hanoi\\'
+output_data_folder_path= 'C:\Download\Data\Output\Hanoi\\'
+
+start_time = time.time()
+process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
+print("--- %s seconds ---" % (time.time() - start_time))
 
 cv2.imshow('Satellite', fullSatelliteImg)
 cv2.imshow('Roadmap', fullRoadmapImg)
