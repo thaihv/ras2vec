@@ -228,7 +228,7 @@ def write_points2shpfile(outputfile, points):
     add_prj.close()
     print('Done! ', outputfile)
         
-def write_polygons2shpfile(outputfile, polygons):
+def write_polygons2shpfile(outputfile, polygons, theorybbox):
     # Calculate BBOX
     multipolygon = []
     for n, p in enumerate(polygons):
@@ -243,9 +243,13 @@ def write_polygons2shpfile(outputfile, polygons):
     except:
         return
     
+    if theorybbox is None:
+        theorybbox = bbpoly
+    else:
+        print(bbpoly)
+        print(theorybbox)
+        
     boundarylines = LineString(bbpoly.exterior.coords)
-#     bbpoly = Polygon([(realbbox[0],realbbox[1]), (realbbox[0],realbbox[3]), (realbbox[2],realbbox[3]), (realbbox[2],realbbox[1]), (realbbox[0],realbbox[1])])
-#     boundarylines = LineString(bbpoly.exterior.coords)
     
     centerpoints = []
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYGON, encoding="utf8") as shp:
@@ -255,12 +259,12 @@ def write_polygons2shpfile(outputfile, polygons):
         shp.field('Address', 'C', size=250)
         
         # first one, add realbbox to shape file
-        coords = bbpoly.exterior.coords
+        coords = theorybbox.exterior.coords
         outpoly = []
         for pp in list(coords):
             outpoly.append([pp[0],pp[1]])
         shp.poly([outpoly])
-        area = calculate_polygon_area_in_m2(bbpoly)
+        area = calculate_polygon_area_in_m2(theorybbox)
         shp.record("polygon 0", area, 0, 'Boundary')
         # second one, add other polygons to shape file
         for n, p in enumerate(polygons):
@@ -282,7 +286,7 @@ def write_polygons2shpfile(outputfile, polygons):
             for pp in list(coords):
                 outpoly.append([pp[0],pp[1]])
             shp.poly([outpoly])
-
+ 
             # Area
             area = calculate_polygon_area_in_m2(gpoly)
             # Center point info
@@ -290,10 +294,10 @@ def write_polygons2shpfile(outputfile, polygons):
 #             r = results['results'][0]['formatted_address']
 #             # Name
 #             strJson = json.dumps(r).encode("utf-8")
-            
+             
             #print(strJson)
             shp.record("polygon " + str(n + 1), area, bJointly, "Info")
-            print("...", end = '')
+ 
             
     add_prj = open("%s.prj" % outputfile[:-4], "w")
     proj = osr.SpatialReference()
@@ -317,16 +321,24 @@ def write_linestring2shpfile(outputfile, lines, interections):
                 print("---->")
                 glinestring = LineString(l)
                 print (glinestring.is_ring)
-                segments = split_line_with_points(glinestring, intersect_points)
-                for n, s in enumerate(segments):
-                    print(s)
-                    glinestring = s.simplify(0.000003)
+                try:
+                    segments = split_line_with_points(glinestring, intersect_points)
+                    for n, s in enumerate(segments):
+                        glinestring = s.simplify(0.000003)
+                        #glinestring = s
+                        outlines = []
+                        for pp in glinestring.coords:
+                            outlines.append([pp[0],pp[1]])
+                        shp.line([outlines])
+                        shp.record('linestring ' + str(i) + '_' + str(n))
+                except:
+                    glinestring = glinestring.simplify(0.000003)
                     #glinestring = s
                     outlines = []
                     for pp in glinestring.coords:
                         outlines.append([pp[0],pp[1]])
                     shp.line([outlines])
-                    shp.record('linestring ' + str(i) + '_' + str(n))
+                    shp.record('linestring ' + str(i))
 
         else:
             for i, l in enumerate(lines):
@@ -383,7 +395,7 @@ def getSkeletonIntersection(skeleton):
     Returns: 
     List of 2-tuples (x,y) containing the intersection coordinates
     """
-    # A biiiiiig list of valid intersections             2 3 4
+    # A big list of valid intersections                  2 3 4
     # These are in the format shown to the right         1 C 5
     #                                                    8 7 6 
     validIntersection = [[0,1,0,1,0,0,1,0],[0,0,1,0,1,0,0,1],[1,0,0,1,0,1,0,0],
@@ -400,6 +412,18 @@ def getSkeletonIntersection(skeleton):
                          [0,1,1,0,1,0,0,1],[1,1,0,1,0,0,1,0],[0,1,0,1,1,0,1,0],
                          [0,0,1,0,1,1,0,1],[1,0,1,0,0,1,0,1],[1,0,0,1,0,1,1,0],
                          [1,0,1,1,0,1,0,0]];
+                         
+    validEndpoint = [[1,0,0,0,0,0,0,0],
+                      [0,1,0,0,0,0,0,0],
+                      [0,0,1,0,0,0,0,0],
+                      [0,0,0,1,0,0,0,0],
+                      [0,0,0,0,1,0,0,0],
+                      [0,0,0,0,0,1,0,0],
+                      [0,0,0,0,0,0,1,0],
+                      [0,0,0,0,0,0,0,1]];
+                      
+    endpoints = list();
+                             
     image = skeleton.copy();
     image = image/255;
     intersections = list();
@@ -411,6 +435,8 @@ def getSkeletonIntersection(skeleton):
                 valid = True;
                 if nbs in validIntersection:
                     intersections.append((y,x));
+                if nbs in validEndpoint:
+                    endpoints.append((y,x));    
     # Filter intersections to make sure we don't count them twice or ones that are very close together
     for point1 in intersections:
         for point2 in intersections:
@@ -418,5 +444,7 @@ def getSkeletonIntersection(skeleton):
                 intersections.remove(point2);
     # Remove duplicates
     intersections = list(set(intersections));
-    return intersections;
+    endpoints = list(set(endpoints));
+    
+    return intersections, endpoints;
     

@@ -10,6 +10,7 @@ from skimage import io, filters
 from skimage.morphology import skeletonize, thin, medial_axis
 from scipy import ndimage 
 import matplotlib.pyplot as plt
+from shapely.geometry import Polygon
 import time
 import os
 import utils
@@ -51,7 +52,11 @@ def process_offlinedata(input_data_folder_path, output_data_folder_path, org_lat
                         if dir_name == str('Buildings') or dir_name == str('Zones'):                            
                             building_polygons = utils.fetch_buildings_or_zonesdata(tile_name)
                             gis_polygons = convert_pixelarrays2worldcoordinate(building_polygons, lat , lon, zoom)
-                            utils.write_polygons2shpfile(outputshpfile, gis_polygons)
+                            
+                            minx, miny, maxx, maxy = calculate_bbox_tiles(lat, lon, tilesize, zoom)
+                            theorybbox = Polygon([(miny, minx), (miny, maxx), (maxy, maxx), (maxy, minx), (miny, minx)])
+                            utils.write_polygons2shpfile(outputshpfile, gis_polygons, theorybbox)
+                            
                         elif dir_name == str('Highways') or dir_name == str('LocalRoads') or dir_name == str('ArterialRoads') or dir_name == str('ControlledAccessRoads'):
                             roads, jointpoints = utils.fetch_roadsdata(tile_name)
                             
@@ -109,7 +114,7 @@ lon = 105.7887625
 zoom = 18
 imagesize = 640
 
-style = styleHighwayRoad
+style = styleBuildings
 
 if style == styleBuildings:     
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Buildings.shp'
@@ -220,6 +225,7 @@ def fetch_onlineroaddata(url, dest_img):
     #thinned = thinned.astype(np.uint8)
     
     thinned = skeletonize(thinned, method='lee')
+    
     # display results
 #     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(8, 4), sharex=True, sharey=True)
 #      
@@ -235,24 +241,59 @@ def fetch_onlineroaddata(url, dest_img):
 #     fig.tight_layout()
 #     plt.show()
 
-    intersections = utils.getSkeletonIntersection(thinned)
+    intersections, endpoints = utils.getSkeletonIntersection(thinned)
+    
     contours, hier = cv2.findContours(thinned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    #contours, hier = cv2.findContours(thinned, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    
 
-    # draw the outline of all contours
+    font = cv2.FONT_HERSHEY_COMPLEX
+    # Draw the outline of all contours
     for n, cnt in enumerate(contours):
             cv2.drawContours(fullSatelliteImg,[cnt],0,(0,255,0),1)
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
             print('Contours--->' + str(n), cnt)
             roads.append(cnt)
+            
+            
+            if n == 1:
+                points = cnt.ravel()  
+                i = 0
+                max = 1800
+                for j in points:
+                    if(i % 50 == 0) and (i < max):
+                        x = points[i] 
+                        y = points[i + 1] 
+                        # String containing the co-ordinates. 
+                        string = str(x) + " " + str(y)  
+                        if(i == 0): 
+                            # text on topmost co-ordinate. 
+                            cv2.putText(fullSatelliteImg, "Begin", (x, y),  font, 0.3, (255, 0, 0))
+                        elif (i == (max - 50)):
+                            cv2.putText(fullSatelliteImg, str(i), (x, y),  font, 0.3, (0, 0, 255))
+                        else: 
+                            # text on remaining co-ordinates. 
+                            cv2.putText(fullSatelliteImg, str(i), (x, y),  font, 0.3, (0, 255, 0))
+                              
+                    i = i + 1
+                    
+                    if (i == len(points) - 2):
+                        x = points[i] 
+                        y = points[i + 1]
+                        cv2.putText(fullSatelliteImg, "End", (x , y),  font, 0.5, (0, 0, 255))
 #             epsilon = 0.001*cv2.arcLength(cnt, True)
 #             approx = cv2.approxPolyDP(cnt, epsilon, False)
 #             cv2.drawContours(fullSatelliteImg,[approx],0,(0,255,0),1)
 #             cv2.drawContours(dest_img,[approx],0,(0,255,0),1)
 #             roads.append(approx)
-    # Draw interections
+    # Draw interections and and points
     for n, section in enumerate(intersections):
         cv2.circle(fullSatelliteImg, section, 3, (0,0,255), 3 )
         cv2.circle(dest_img, section, 3, (0,0,255), 3 )
+        cv2.putText(fullSatelliteImg, str(n), section,  font, 0.5, (0, 0, 255))
+    for n, point in enumerate(endpoints):
+        cv2.circle(fullSatelliteImg, point, 3, (225,0,255), 3 )
+        cv2.circle(dest_img, point, 3, (225,0,255), 3 )
 
     return roads, intersections
 def convert_pixelarrays2worldcoordinate(pointsarrays, centerlat, centerlon, zoom = 18, tilezise = 640):
@@ -277,10 +318,29 @@ def convert_a_pixel_list2worldcoordinate(pointlist, centerlat, centerlon, zoom =
         print ("[lon, lat]:=", lon, lat)
         pointsarray.append([lon, lat])
     return pointsarray
+def calculate_bbox_tiles(lat, lon, tilesize, zoom):
     
-def create_polygons_shapefile(polygons):    
+    minx = 0
+    miny = 0
+    maxx = tilesize
+    maxy = tilesize 
+      
+    minx, miny = utils.getPointLatLngFromPixel(minx, miny, lat, lon, tilesize, zoom)
+    maxx, maxy = utils.getPointLatLngFromPixel(maxx, maxy, lat, lon, tilesize, zoom)
+    
+    print ('MinXY is (%s, %s)' % (minx, miny))
+    print ('MaxXY is (%s, %s)' % (maxx, maxy))
+
+    return minx, miny, maxx, maxy
+def create_polygons_shapefile(polygons):
+        
     gis_polygons = convert_pixelarrays2worldcoordinate(polygons, lat , lon, zoom)
-    utils.write_polygons2shpfile(outputshpfile, gis_polygons)
+
+    minx, miny, maxx, maxy = calculate_bbox_tiles(lat, lon, imagesize, zoom)
+    theorybbox = Polygon([(miny, minx), (miny, maxx), (maxy, maxx), (maxy, minx), (miny, minx)])
+    
+    utils.write_polygons2shpfile(outputshpfile, gis_polygons,theorybbox)
+    
     return outputshpfile
 def create_polyline_shapefile(polylines, intersections):    
     gis_polylines = convert_pixelarrays2worldcoordinate(polylines, lat , lon, zoom)
@@ -306,7 +366,7 @@ else:
 # Run test for get data offline
 # input_data_folder_path = 'C:\Download\Data\Google\\'
 # output_data_folder_path= 'C:\Download\Data\Output\\'
-# 
+#    
 # start_time = time.time()
 # process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
 # print("--- %s seconds ---" % (time.time() - start_time))

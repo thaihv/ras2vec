@@ -67,6 +67,9 @@ def create_offlinedata(url, org_lat, org_lon, tilezise, zoom, dest_folder, tilen
                 filename = directory + "\%d.png" % (j)
                 cv2.imwrite(filename, img)
     print('Download Google Static Map OK!')
-    
-gg_folder = 'C:\Download\Data\GoogleTest\\'
-create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 3)
+
+utils.display_shpinfo('data\VNM_adm1.shp')
+
+
+# gg_folder = 'C:\Download\Data\GoogleTest\\'
+# create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 3)
