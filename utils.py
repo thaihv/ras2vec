@@ -8,6 +8,8 @@ import shapefile
 import math
 import requests
 
+import psycopg2
+
 import pyproj
 from skimage import io, filters
 from skimage.morphology import skeletonize
@@ -393,6 +395,79 @@ def write_linestring2shpfile(outputfile, lines, interections):
     add_prj.write(epsg)
     add_prj.close()
     print('Done! ', outputfile)
+    
+def write_polygons2database(tablename, polygons, theorybbox):
+    global connection
+    try:
+        connection = psycopg2.connect(user = "postgres",
+                                      password = "postgres",
+                                      host = "127.0.0.1",
+                                      port = "5432",
+                                      database = "ras2vec")
+            
+        cursor = connection.cursor()
+        #Run at first time
+        #cursor.execute("CREATE EXTENSION postgis;")
+        cursor.execute("DROP TABLE IF EXISTS " + tablename + ";")
+        query_createtable = '''CREATE TABLE ''' + tablename + '''
+              (ID SERIAL PRIMARY KEY     NOT NULL,
+              Name           TEXT,
+              CalcArea         REAL,
+              Jointly  BOOLEAN,
+              Address TEXT,
+              geom GEOMETRY DEFAULT NULL); '''
+        cursor.execute(query_createtable)
+        print("Table %s created successfully in PostgreSQL " % tablename)
+        # Process insert polygons
+        multipolygon = []
+        for n, p in enumerate(polygons):
+            gpoly = Polygon(p)
+            multipolygon.append(gpoly)
+        polygon_collection = geometry.MultiPolygon(multipolygon)
+        # BBox to calculate jointly parts
+        realbbox = polygon_collection.bounds
+        # Case realbbox not a polygon because collection is a line (we were not check it), try catch 
+        try:
+            bbpoly = Polygon([(realbbox[0],realbbox[1]), (realbbox[0],realbbox[3]), (realbbox[2],realbbox[3]), (realbbox[2],realbbox[1]), (realbbox[0],realbbox[1])])
+        except:
+            return
+        if theorybbox is None:
+            theorybbox = bbpoly
+            
+        boundarylines = LineString(bbpoly.exterior.coords)
+        name = 'polygon_0'
+        bJointly = 0
+        address = 'Boundary'
+        geom_boundary = theorybbox.wkb
+        area = calculate_polygon_area_in_m2(theorybbox)
+        
+        cursor.execute('INSERT INTO ' + tablename + '(Name, CalcArea, Jointly, Address, geom)'
+                       'VALUES (%(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
+                       {'name': name, 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : geom_boundary})
+        
+        for n, p in enumerate(polygons):
+            gpoly = Polygon(p)          
+            # Identify jointly polygon
+            bJointly = 0
+            if boundarylines.touches(gpoly):
+                bJointly = 1  
+            #gpoly = gpoly.simplify(0.000005)           
+            area = calculate_polygon_area_in_m2(gpoly)    
+            address = 'Info'     
+            cursor.execute('INSERT INTO ' + tablename + '(Name, CalcArea, Jointly, Address, geom)'
+                           'VALUES (%(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
+                           {'name': 'polygon' + str(n+1), 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : gpoly.wkb})    
+
+        connection.commit()
+    except (Exception, psycopg2.Error) as error :
+        print ("Error while connecting to PostgreSQL", error)
+    finally:
+        #closing database connection.
+        if(connection):
+            cursor.close()
+            connection.close()
+            print("PostgreSQL connection is closed")        
+    
 # From: https://stackoverflow.com/questions/47106276/converting-pixels-to-latlng-coordinates-from-google-static-image
 def getPointLatLngFromPixel(x, y, centerlat, centerlon, imagesize= 640, zoom = 18):
     parallelMultiplier = math.cos(centerlat * math.pi / 180)
