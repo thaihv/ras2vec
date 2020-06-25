@@ -350,7 +350,7 @@ def process_all_layers_into_database(input_data_folder_path, org_lat , org_lon, 
                         elif dir_name == str('Highways') or dir_name == str('LocalRoads') or dir_name == str('ArterialRoads') or dir_name == str('ControlledAccessRoads'):
                             roads, jointpoints = utils.fetch_roadsdata(tile_name)
                             gis_polylines = convert_pixelarrays2worldcoordinate(roads, lat , lon, zoom)
-                            utils.write_roads2database(connection, i, j, roadtype, gis_polylines, None)
+                            utils.write_roads2database(connection, i, j, dir_name, gis_polylines, None)
  
                         
     if(connection):

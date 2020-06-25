@@ -417,7 +417,8 @@ def create_layers_in_database():
               CalcArea         REAL,
               Jointly  BOOLEAN,
               Address TEXT,
-              geom GEOMETRY DEFAULT NULL); '''
+              geom GEOMETRY DEFAULT NULL,
+              cent_point GEOMETRY DEFAULT NULL); '''
         cursor.execute(query_createtable)
         connection.commit()
         print("Buildings Layer is created!")
@@ -431,7 +432,8 @@ def create_layers_in_database():
               Type         TEXT,
               Jointly  BOOLEAN,
               Address TEXT,
-              geom GEOMETRY DEFAULT NULL); '''
+              geom GEOMETRY DEFAULT NULL,
+              cent_point GEOMETRY DEFAULT NULL); '''
         cursor.execute(query_createtable)        
         
         #cursor.execute("CREATE EXTENSION postgis;")
@@ -449,57 +451,68 @@ def create_layers_in_database():
     return connection
                  
 def write_buildings2database(connection, tileX, tileY, polygons, theorybbox):
+    # Process insert polygons
+    multipolygon = []
+    for n, p in enumerate(polygons):
+        gpoly = Polygon(p)
+        multipolygon.append(gpoly)
+    polygon_collection = geometry.MultiPolygon(multipolygon)
+    # BBox to calculate jointly parts
+    realbbox = polygon_collection.bounds
+    # Case realbbox not a polygon because collection is a line (we were not check it), try catch 
+    try:
+        bbpoly = Polygon([(realbbox[0],realbbox[1]), (realbbox[0],realbbox[3]), (realbbox[2],realbbox[3]), (realbbox[2],realbbox[1]), (realbbox[0],realbbox[1])])
+    except:
+        return
+    if theorybbox is None:
+        theorybbox = bbpoly
+        
+    boundarylines = LineString(theorybbox.exterior.coords)
+    
+    values_list = []
+    for n, p in enumerate(polygons):
+        gpoly = Polygon(p)          
+        # Identify jointly polygon
+        bJointly = False
+        if boundarylines.touches(gpoly):
+            bJointly = True           
+        #gpoly = Polygon(gpoly.simplify(0.000005))
+        #centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))
+        area = calculate_polygon_area_in_m2(gpoly)
+        name = 'polygon' + str(n+1)    
+        address = 'Info'
+        geom =  gpoly.wkb
+        center_point = Point(gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]) 
+        center_point = center_point.wkb   
+        
+#         results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
+#         r = results['results'][0]['formatted_address']
+#         if r is not None:
+#             address = r
+        value = (tileX, tileY, name, area, bJointly, address, geom, center_point)
+        values_list.append(value)
+        print ("Verified " + name)
+    
     try:
         cursor = connection.cursor()
-        # Process insert polygons
-        multipolygon = []
-        for n, p in enumerate(polygons):
-            gpoly = Polygon(p)
-            multipolygon.append(gpoly)
-        polygon_collection = geometry.MultiPolygon(multipolygon)
-        # BBox to calculate jointly parts
-        realbbox = polygon_collection.bounds
-        # Case realbbox not a polygon because collection is a line (we were not check it), try catch 
-        try:
-            bbpoly = Polygon([(realbbox[0],realbbox[1]), (realbbox[0],realbbox[3]), (realbbox[2],realbbox[3]), (realbbox[2],realbbox[1]), (realbbox[0],realbbox[1])])
-        except:
-            return
-        if theorybbox is None:
-            theorybbox = bbpoly
-            
-        boundarylines = LineString(theorybbox.exterior.coords)
+
         name = 'polygon_0'
         bJointly = 0
         address = 'Boundary'
         geom_boundary = theorybbox.wkb
         area = calculate_polygon_area_in_m2(theorybbox)
-        
-        cursor.execute('INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom)'
-                       'VALUES (%(X)s, %(Y)s, %(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
-                       {'X': tileX,'Y': tileY, 'name': name, 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : geom_boundary})
+        center_point = Point(theorybbox.centroid._get_coords()[0][0], theorybbox.centroid._get_coords()[0][1])
+        center_point = center_point.wkb
+        cursor.execute('INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom, cent_point)'
+                       'VALUES (%(X)s, %(Y)s, %(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326), ST_GeomFromWKB(%(center_point)s::geometry, 4326))',
+                       {'X': tileX,'Y': tileY, 'name': name, 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : geom_boundary, 'center_point' : center_point})
 
         connection.commit()
 
         sql = """
-            INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom)
-            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326))
+            INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom, cent_point)
+            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326), ST_GeomFromWKB(%s::geometry, 4326))
         """
-        values_list = []
-        for n, p in enumerate(polygons):
-            gpoly = Polygon(p)          
-            # Identify jointly polygon
-            bJointly = False
-            if boundarylines.touches(gpoly):
-                bJointly = True           
-            #gpoly = Polygon(gpoly.simplify(0.000005))
-            area = calculate_polygon_area_in_m2(gpoly)
-            name = 'polygon' + str(n+1)    
-            address = 'Info'
-            geom =  gpoly.wkb    
-            value = (tileX, tileY, name, area, bJointly, address, geom)
-            values_list.append(value)
-            print ("Inserted " + name)
-                     
         psycopg2.extras.execute_batch(cursor, sql, values_list)
         print ("Inserted all Buildings for Tile ",tileX, "_",tileY )
         connection.commit()
@@ -527,19 +540,23 @@ def write_roads2database(connection, tileX, tileY, roadtype, lines, interections
                     geom = LineString(s.simplify(0.000003))
                     name = 'linestring ' + str(i) + '_' + str(n)    
                     address = 'Info'
+                    center_point = Point(geom.centroid._get_coords()[0][0], geom.centroid._get_coords()[0][1]) 
+                    center_point = center_point.wkb 
                     geom =  geom.wkb
-                    value = (tileX, tileY, name, roadtype, False, address, geom)
+                    value = (tileX, tileY, name, roadtype, False, address, geom, center_point)
                     values_list.append(value) 
-                    print ("Inserted " + name)                        
+                    print ("Verified " + name)                        
 
             except:
                 geom = LineString(glinestring.simplify(0.000003))
                 name = 'linestring ' + str(i)  
                 address = 'Info'
+                center_point = Point(geom.centroid._get_coords()[0][0], geom.centroid._get_coords()[0][1]) 
+                center_point = center_point.wkb 
                 geom =  geom.wkb  
-                value = (tileX, tileY, name, roadtype, False, address, geom)
+                value = (tileX, tileY, name, roadtype, False, address, geom, center_point)
                 values_list.append(value)
-                print ("Inserted " + name)
+                print ("Verified " + name)
     else:
         for i, l in enumerate(lines):
             try:
@@ -547,17 +564,19 @@ def write_roads2database(connection, tileX, tileY, roadtype, lines, interections
                 geom = LineString(geom.simplify(0.000003))
                 name = 'linestring ' + str(i)  
                 address = 'Info'
+                center_point = Point(geom.centroid._get_coords()[0][0], geom.centroid._get_coords()[0][1]) 
+                center_point = center_point.wkb                 
                 geom =  geom.wkb
-                value = (tileX, tileY, name, roadtype, False, address, geom)
+                value = (tileX, tileY, name, roadtype, False, address, geom, center_point)
                 values_list.append(value)
-                print ("Inserted " + name)                      
+                print ("Verified " + name)                      
             except:
                 return    
     try:
         cursor = connection.cursor()
         sql = """
-            INSERT INTO Roads(X, Y, Name, Type, Jointly, Address, geom)
-            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326))
+            INSERT INTO Roads(X, Y, Name, Type, Jointly, Address, geom, cent_point)
+            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326), ST_GeomFromWKB(%s::geometry, 4326))
         """
         psycopg2.extras.execute_batch(cursor, sql, values_list)
         print ("Inserted all Roads for Tile", tileX, "_",tileY)
