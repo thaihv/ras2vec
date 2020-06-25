@@ -97,12 +97,12 @@ styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on
 # lon = 105.781349
 
 #test highway
-# lat = 21.0813699
-# lon = 105.7887625
+lat = 21.0813699
+lon = 105.7887625
 
 # Ha Noi Center
-lat = 20.97503280639646
-lon = 105.65287399291995
+# lat = 20.97503280639646
+# lon = 105.65287399291995
 
 
 # highway next Y + 1
@@ -117,7 +117,7 @@ lon = 105.65287399291995
 zoom = 18
 imagesize = 640
 
-style = styleBuildings
+style = styleHighwayRoad
 tablename = 'Buildings'
 
 if style == styleBuildings:     
@@ -353,7 +353,7 @@ def create_polygons_shapefile(polygons):
     utils.write_polygons2shpfile(outputshpfile, gis_polygons,theorybbox)
     
     utils.create_buildingslayer_in_database()
-    utils.write_buildings2database(gis_polygons,theorybbox)
+    utils.write_buildings2database(0, 0, gis_polygons,theorybbox)
     
     return outputshpfile
 def create_polyline_shapefile(polylines, intersections):    
@@ -361,6 +361,9 @@ def create_polyline_shapefile(polylines, intersections):
     intersectpoints = convert_a_pixel_list2worldcoordinate(intersections, lat , lon, zoom)
     print ("INTER : " , intersectpoints)
     utils.write_linestring2shpfile(outputshpfile, gis_polylines, intersectpoints)
+    
+    utils.create_roadslayer_in_database()
+    utils.write_roads2database(0, 0, 'Highway', gis_polylines, intersectpoints)
     return outputshpfile    
 # Run test for get data online
 created_file = None

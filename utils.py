@@ -410,6 +410,8 @@ def create_buildingslayer_in_database():
         cursor.execute("DROP TABLE IF EXISTS Buildings;")
         query_createtable = '''CREATE TABLE Buildings
               (ID SERIAL PRIMARY KEY     NOT NULL,
+              X  INT     NOT NULL, 
+              Y  INT     NOT NULL,             
               Name           TEXT,
               CalcArea         REAL,
               Jointly  BOOLEAN,
@@ -440,8 +442,10 @@ def create_roadslayer_in_database():
         cursor.execute("DROP TABLE IF EXISTS Roads;")
         query_createtable = '''CREATE TABLE Roads
               (ID SERIAL PRIMARY KEY     NOT NULL,
+              X  INT     NOT NULL, 
+              Y  INT     NOT NULL,              
               Name           TEXT,
-              CalcArea         REAL,
+              Type         TEXT,
               Jointly  BOOLEAN,
               Address TEXT,
               geom GEOMETRY DEFAULT NULL); '''
@@ -458,7 +462,7 @@ def create_roadslayer_in_database():
             connection.close()
             print("PostgreSQL connection is closed")    
                                              
-def write_buildings2database(polygons, theorybbox):
+def write_buildings2database(tileX, tileY, polygons, theorybbox):
     global connection
     try:
         connection = psycopg2.connect(user = "postgres",
@@ -484,22 +488,22 @@ def write_buildings2database(polygons, theorybbox):
         if theorybbox is None:
             theorybbox = bbpoly
             
-        boundarylines = LineString(bbpoly.exterior.coords)
+        boundarylines = LineString(theorybbox.exterior.coords)
         name = 'polygon_0'
         bJointly = 0
         address = 'Boundary'
         geom_boundary = theorybbox.wkb
         area = calculate_polygon_area_in_m2(theorybbox)
         
-        cursor.execute('INSERT INTO Buildings(Name, CalcArea, Jointly, Address, geom)'
-                       'VALUES (%(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
-                       {'name': name, 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : geom_boundary})
+        cursor.execute('INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom)'
+                       'VALUES (%(X)s, %(Y)s, %(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
+                       {'X': tileX,'Y': tileY, 'name': name, 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : geom_boundary})
 
-
+        connection.commit()
 
         sql = """
-            INSERT INTO Buildings(Name, CalcArea, Jointly, Address, geom)
-            VALUES %s
+            INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom)
+            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326))
         """
         values_list = []
         for n, p in enumerate(polygons):
@@ -508,31 +512,15 @@ def write_buildings2database(polygons, theorybbox):
             bJointly = False
             if boundarylines.touches(gpoly):
                 bJointly = True           
+            #gpoly = Polygon(gpoly.simplify(0.000005))
             area = calculate_polygon_area_in_m2(gpoly)
             name = 'polygon' + str(n+1)    
-            address = 'Info'     
-            value = [(name, area, bJointly, address, gpoly.wkb )]
+            address = 'Info'
+            geom =  gpoly.wkb    
+            value = (tileX, tileY, name, area, bJointly, address, geom)
             values_list.append(value)
                      
-        psycopg2.extras.execute_batch(cursor, sql, values_list, page_size=1000)
-        
-#         for n, p in enumerate(polygons):
-#             gpoly = Polygon(p)          
-#             # Identify jointly polygon
-#             bJointly = 0
-#             if boundarylines.touches(gpoly):
-#                 bJointly = 1  
-#             #gpoly = gpoly.simplify(0.000005)           
-#             area = calculate_polygon_area_in_m2(gpoly)    
-#             address = 'Info'     
-#             cursor.execute('INSERT INTO ' + tablename + '(Name, CalcArea, Jointly, Address, geom)'
-#                            'VALUES (%(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
-#                            {'name': 'polygon' + str(n+1), 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : gpoly.wkb})  
-            
-            
-            
-              
-
+        psycopg2.extras.execute_batch(cursor, sql, values_list)
         connection.commit()
     except (Exception, psycopg2.Error) as error :
         print ("Error while connecting to PostgreSQL", error)
@@ -542,7 +530,7 @@ def write_buildings2database(polygons, theorybbox):
             cursor.close()
             connection.close()
             print("PostgreSQL connection is closed")        
-def write_roads2database(lines, interections):
+def write_roads2database(tileX, tileY, roadtype, lines, interections):
     global connection
     try:
         connection = psycopg2.connect(user = "postgres",
@@ -552,6 +540,50 @@ def write_roads2database(lines, interections):
                                       database = "ras2vec")
             
         cursor = connection.cursor()
+        sql = """
+            INSERT INTO Roads(X, Y, Name, Type, Jointly, Address, geom)
+            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326))
+        """
+        intersect_points = []
+        values_list = []
+        if interections is not None:
+            for p in interections:
+                intersect_points.append(Point(p))
+            for i, l in enumerate(lines):
+                glinestring = LineString(l)
+                try:
+                    segments = split_line_with_points(glinestring, intersect_points)
+                    for n, s in enumerate(segments):
+                        geom = LineString(s.simplify(0.000003))
+                        name = 'linestring ' + str(i) + '_' + str(n)    
+                        address = 'Info'
+                        geom =  geom.wkb
+                        value = (tileX, tileY, name, roadtype, False, address, geom)
+                        values_list.append(value)                         
+
+                except:
+                    geom = LineString(glinestring.simplify(0.000003))
+                    name = 'linestring ' + str(i)  
+                    address = 'Info'
+                    geom =  geom.wkb  
+                    value = (tileX, tileY, name, roadtype, False, address, geom)
+                    values_list.append(value)
+        else:
+            for i, l in enumerate(lines):
+                try:
+                    geom = LineString(l)
+                    geom = LineString(geom.simplify(0.000003))
+                    name = 'linestring ' + str(i)  
+                    address = 'Info'
+                    geom =  geom.wkb
+                    value = (tileX, tileY, name, roadtype, False, address, geom)
+                    values_list.append(value)                      
+                except:
+                    return        
+        
+        psycopg2.extras.execute_batch(cursor, sql, values_list)
+        connection.commit()
+                
     except (Exception, psycopg2.Error) as error :
         print ("Error while connecting to PostgreSQL", error)
     finally:
