@@ -8,67 +8,36 @@ import numpy as np
 from requests.utils import quote
 from skimage import io, filters
 from skimage.morphology import skeletonize, thin, medial_axis
-from scipy import ndimage 
-import matplotlib.pyplot as plt
+
 from shapely.geometry import Polygon
 import time
 import os
 import utils
 from pathlib import Path
-from skimage.util import invert
 
 
-tile_dir = 'C:\Download\Data\CG'
-level = 18
 
-low_yellow = (0,9,0)
-high_yellow = (23,18,255)
+# Center My Dinh (X,Y)
+# lat = 21.0312246
+# lon = 105.7646925
 
-low_gray = (0,0,0)
-high_gray = (100,5,250)
+# Cau vuot Mai Dich
+# lat = 21.035628
+# lon = 105.781349
 
-range_sets = ([low_yellow, high_yellow], [low_gray, high_gray])
-kernel = np.ones((3,3),np.uint8)
+#test highway
+# lat = 21.0813699
+# lon = 105.7887625
 
-def process_offlinedata(input_data_folder_path, output_data_folder_path, org_lat , org_lon, tilesize = 640, zoom = 18, tileformat = 'png'):
-    # r=root, d=directories, f = files
-    for r, d, f in os.walk(input_data_folder_path):
-        for dir_name in d:
-            level_dir = input_data_folder_path + "\\"+ dir_name
-            for root, dirs, files in os.walk(level_dir):
-                for file in files:
-                    if file.endswith(tileformat):
-                        tile_name = os.path.join(root, file) 
-                        X = os.path.basename(os.path.dirname(tile_name))
-                        Y = os.path.splitext(os.path.split(tile_name)[1])[0]
-                        directory = output_data_folder_path + dir_name + "\\"
-                        if not os.path.exists(directory):
-                            os.makedirs(directory)  
-                        outputshpfile = directory + X + '_' + Y + '_' + dir_name +'.shp'
-                        print('Processing ' + tile_name + ": --> " + outputshpfile)
-                        i = int(X)
-                        j = int(Y)
-                        lat, lon = utils.getPointLatLngFromPixel(int(tilesize /2) + (i * tilesize), int(tilesize /2) + (j * tilesize), org_lat, org_lon, tilesize, zoom)
-                        if dir_name == str('Buildings') or dir_name == str('Zones'):                            
-                            building_polygons = utils.fetch_buildings_or_zonesdata(tile_name)
-                            gis_polygons = convert_pixelarrays2worldcoordinate(building_polygons, lat , lon, zoom)
-                            
-                            minx, miny, maxx, maxy = calculate_bbox_tiles(lat, lon, tilesize, zoom)
-                            theorybbox = Polygon([(miny, minx), (miny, maxx), (maxy, maxx), (maxy, minx), (miny, minx)])
-                            utils.write_polygons2shpfile(outputshpfile, gis_polygons, theorybbox)
-                            
-                        elif dir_name == str('Highways') or dir_name == str('LocalRoads') or dir_name == str('ArterialRoads') or dir_name == str('ControlledAccessRoads'):
-                            roads, jointpoints = utils.fetch_roadsdata(tile_name)
-                            
-                            gis_polylines = convert_pixelarrays2worldcoordinate(roads, lat , lon, zoom)
-
-                            utils.write_linestring2shpfile(outputshpfile, gis_polylines, None)
-
-                        
-                        #utils.display_shpinfo(outputshpfile)
+# Ha Noi Center
+lat = 20.97503280639646
+lon = 105.65287399291995
 
 
-                            
+zoom = 18
+imagesize = 640
+
+
 styleBuildings = quote('feature:landscape.man_made|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 #full road is used for creating zones
 styleZones = quote('feature:road|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
@@ -78,66 +47,27 @@ styleHighwayRoad = quote('feature:road.highway|element:geometry.stroke|visibilit
 styleHighwayControlledAccessRoad = quote('feature:road.highway.controlled_access|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 
-# Center My Dinh (X,Y)
-# lat = 21.0312246
-# lon = 105.7646925
-# (X + 1, Y)
-# lat = 21.0312246
-# lon = 105.76812572753906
-# (X + 1, Y + 1)
-# lat = 21.028020076956896
-# lon = 105.76812572753906
-# (X, Y + 1)
-# lat = 21.028020076956896
-# lon = 105.7646925
-
-
-# Cau vuot Mai Dich
-# lat = 21.035628
-# lon = 105.781349
-
-#test highway
-lat = 21.0813699
-lon = 105.7887625
-
-# Ha Noi Center
-# lat = 20.97503280639646
-# lon = 105.65287399291995
-
-
-# highway next Y + 1
-# lat = 21.07816645652331
-# lon = 105.7887625
-# highway next X - 1, Y + 1
-# lat = 21.07816645652331
-# lon = 105.78532927246094
-# highway next Y + 2
-# lat = 21.074962944007055
-# lon = 105.7887625
-zoom = 18
-imagesize = 640
-
-style = styleHighwayRoad
-tablename = 'Buildings'
+style = styleBuildings
+roadtype = 'Highways'
 
 if style == styleBuildings:     
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Buildings.shp'
-    tablename = 'Buildings'
+    roadtype = 'Buildings'
 elif style == styleZones:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Zones.shp'
-    tablename = 'Zones'
+    roadtype = 'Zones'
 elif style == styleHighwayRoad:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Highways.shp'
-    tablename = 'Highways'
+    roadtype = 'Highways'
 elif style == styleLocalRoad:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Localroads.shp'
-    tablename = 'Localroads'  
+    roadtype = 'Localroads'  
 elif style == styleHighwayControlledAccessRoad:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_HighwayControlledAccess.shp'
-    tablename = 'HighwayControlled'
+    roadtype = 'HighwayControlled'
 elif style == styleArterialRoad:
     outputshpfile = 'C:\Download\Data\Output\\' + str(lon) + '_' + str(lat) + '_'+ str(zoom) + '_Arterialroads.shp'
-    tablename = 'Arterialroads'
+    roadtype = 'Arterialroads'
     
 maptype_satellite = 'satellite'
 maptype_roadmap = 'roadmap'
@@ -264,8 +194,6 @@ def fetch_onlineroaddata(url, dest_img):
             cv2.drawContours(dest_img,[cnt],0,(0,255,0),1)
             print('Contours--->' + str(n), cnt)
             roads.append(cnt)
-            
-            
             if n == 1:
                 points = cnt.ravel()  
                 i = 0
@@ -310,7 +238,7 @@ def convert_pixelarrays2worldcoordinate(pointsarrays, centerlat, centerlon, zoom
     gis_pointsarray = []
     # Calculate next tile from X, Y = (320,320) as tile size = 640 
     newLatCenter, newLonCenter = utils.getPointLatLngFromPixel(320, 320 + 640, centerlat, centerlon, tilezise, zoom)
-    print ("Center Info: Tile (X,Y) is centered at [%s , %s] AND (X, Y + 1) is centered at [%s , %s]" % (centerlat, centerlon, newLatCenter, newLonCenter))
+    #print ("Center Info: Tile (X,Y) is centered at [%s , %s] AND (X, Y + 1) is centered at [%s , %s]" % (centerlat, centerlon, newLatCenter, newLonCenter))
     
     for n, p in enumerate(pointsarrays):
         points = []
@@ -330,7 +258,6 @@ def convert_a_pixel_list2worldcoordinate(pointlist, centerlat, centerlon, zoom =
     return pointsarray
 
 def calculate_bbox_tiles(lat, lon, tilesize, zoom):
-    
     minx = 0
     miny = 0
     maxx = tilesize
@@ -338,10 +265,6 @@ def calculate_bbox_tiles(lat, lon, tilesize, zoom):
       
     minx, miny = utils.getPointLatLngFromPixel(minx, miny, lat, lon, tilesize, zoom)
     maxx, maxy = utils.getPointLatLngFromPixel(maxx, maxy, lat, lon, tilesize, zoom)
-    
-    print ('MinXY is (%s, %s)' % (minx, miny))
-    print ('MaxXY is (%s, %s)' % (maxx, maxy))
-
     return minx, miny, maxx, maxy
 def create_polygons_shapefile(polygons):
         
@@ -352,7 +275,7 @@ def create_polygons_shapefile(polygons):
     
     utils.write_polygons2shpfile(outputshpfile, gis_polygons,theorybbox)
     
-    utils.create_buildingslayer_in_database()
+    utils.create_layers_in_database()
     utils.write_buildings2database(0, 0, gis_polygons,theorybbox)
     
     return outputshpfile
@@ -362,36 +285,106 @@ def create_polyline_shapefile(polylines, intersections):
     print ("INTER : " , intersectpoints)
     utils.write_linestring2shpfile(outputshpfile, gis_polylines, intersectpoints)
     
-    utils.create_roadslayer_in_database()
+    utils.create_layers_in_database()
     utils.write_roads2database(0, 0, 'Highway', gis_polylines, intersectpoints)
-    return outputshpfile    
-# Run test for get data online
-created_file = None
-if (style == styleBuildings) or (style == styleZones):    
-    # Create shape file for buildings and zones in polygons    
-    building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
-    created_file = create_polygons_shapefile(building_polygons)
-else:
-    # Create shape file for roads in poly lines 
-    roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
-    created_file = create_polyline_shapefile(roads, intersections)
+    return outputshpfile
+
+def process_all_layers_to_shapefile(input_data_folder_path, output_data_folder_path, org_lat , org_lon, tilesize = 640, zoom = 18, tileformat = 'png'):
+    # r=root, d=directories, f = files
+    for r, d, f in os.walk(input_data_folder_path):
+        for dir_name in d:
+            level_dir = input_data_folder_path + "\\"+ dir_name
+            for root, dirs, files in os.walk(level_dir):
+                for file in files:
+                    if file.endswith(tileformat):
+                        tile_name = os.path.join(root, file) 
+                        X = os.path.basename(os.path.dirname(tile_name))
+                        Y = os.path.splitext(os.path.split(tile_name)[1])[0]
+                        directory = output_data_folder_path + dir_name + "\\"
+                        if not os.path.exists(directory):
+                            os.makedirs(directory)  
+                        outputshpfile = directory + X + '_' + Y + '_' + dir_name +'.shp'
+                        print('Processing ' + tile_name + ": --> " + outputshpfile)
+                        i = int(X)
+                        j = int(Y)
+                        lat, lon = utils.getPointLatLngFromPixel(int(tilesize /2) + (i * tilesize), int(tilesize /2) + (j * tilesize), org_lat, org_lon, tilesize, zoom)
+                        if dir_name == str('Buildings') or dir_name == str('Zones'):                            
+                            building_polygons = utils.fetch_buildings_or_zonesdata(tile_name)
+                            gis_polygons = convert_pixelarrays2worldcoordinate(building_polygons, lat , lon, zoom)
+                            
+                            minx, miny, maxx, maxy = calculate_bbox_tiles(lat, lon, tilesize, zoom)
+                            theorybbox = Polygon([(miny, minx), (miny, maxx), (maxy, maxx), (maxy, minx), (miny, minx)])
+                            
+                            utils.write_polygons2shpfile(outputshpfile, gis_polygons, theorybbox)
+                        elif dir_name == str('Highways') or dir_name == str('LocalRoads') or dir_name == str('ArterialRoads') or dir_name == str('ControlledAccessRoads'):
+                            roads, jointpoints = utils.fetch_roadsdata(tile_name)
+                            gis_polylines = convert_pixelarrays2worldcoordinate(roads, lat , lon, zoom)
+                            utils.write_linestring2shpfile(outputshpfile, gis_polylines, None)
+                        #utils.display_shpinfo(outputshpfile)
+                        
+def process_all_layers_into_database(input_data_folder_path, org_lat , org_lon, tilesize = 640, zoom = 18, tileformat = 'png'):
     
+    connection = utils.create_layers_in_database()
+    # r=root, d=directories, f = files
+    for r, d, f in os.walk(input_data_folder_path):
+        for dir_name in d:
+            level_dir = input_data_folder_path + "\\"+ dir_name
+            for root, dirs, files in os.walk(level_dir):
+                for file in files:
+                    if file.endswith(tileformat):
+                        tile_name = os.path.join(root, file) 
+                        X = os.path.basename(os.path.dirname(tile_name))
+                        Y = os.path.splitext(os.path.split(tile_name)[1])[0]
+                        i = int(X)
+                        j = int(Y)
+                        lat, lon = utils.getPointLatLngFromPixel(int(tilesize /2) + (i * tilesize), int(tilesize /2) + (j * tilesize), org_lat, org_lon, tilesize, zoom)
+                        if dir_name == str('Buildings'):                            
+                            building_polygons = utils.fetch_buildings_or_zonesdata(tile_name)
+                            
+                            gis_polygons = convert_pixelarrays2worldcoordinate(building_polygons, lat , lon, zoom)
+                            minx, miny, maxx, maxy = calculate_bbox_tiles(lat, lon, tilesize, zoom)
+                            
+                            theorybbox = Polygon([(miny, minx), (miny, maxx), (maxy, maxx), (maxy, minx), (miny, minx)]) 
+                                                       
+                            utils.write_buildings2database(connection, i, j, gis_polygons,theorybbox)                            
+                        elif dir_name == str('Highways') or dir_name == str('LocalRoads') or dir_name == str('ArterialRoads') or dir_name == str('ControlledAccessRoads'):
+                            roads, jointpoints = utils.fetch_roadsdata(tile_name)
+                            gis_polylines = convert_pixelarrays2worldcoordinate(roads, lat , lon, zoom)
+                            utils.write_roads2database(connection, i, j, roadtype, gis_polylines, None)
+ 
+                        
+    if(connection):
+        connection.close()                            
+# Run test for get data online
+# created_file = None
+# if (style == styleBuildings) or (style == styleZones):    
+#     # Create shape file for buildings and zones in polygons    
+#     building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
+#     created_file = create_polygons_shapefile(building_polygons)
+# else:
+#     # Create shape file for roads in poly lines 
+#     roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
+#     created_file = create_polyline_shapefile(roads, intersections)
+# cv2.imshow('Satellite', fullSatelliteImg)
+# cv2.imshow('Roadmap', fullRoadmapImg)
+# if cv2.waitKey(0) & 0xFF == ord('q'): 
+#     cv2.destroyAllWindows()     
     
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
 
 
+    
 # Run test for get data offline
-# input_data_folder_path = 'C:\Download\Data\Hanoi\\'
+input_data_folder_path = 'C:\Download\Data\Hanoi\\'
+start_time = time.time()
+print("--- Start %s ---" % start_time)
+# Case of create shape file, need output directory 
 # output_data_folder_path= 'C:\Download\Data\Output\Hanoi\\'
-# 
-# start_time = time.time()
-# process_offlinedata(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
-# print("--- %s seconds ---" % (time.time() - start_time))
+# process_all_layers_to_shapefile(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
+process_all_layers_into_database(input_data_folder_path, lat , lon, imagesize, zoom, 'png')
+print("--- Total time has been taken: %s seconds ---" % (time.time() - start_time))
 
-cv2.imshow('Satellite', fullSatelliteImg)
-cv2.imshow('Roadmap', fullRoadmapImg)
-if cv2.waitKey(0) & 0xFF == ord('q'): 
-    cv2.destroyAllWindows() 
+
     
 

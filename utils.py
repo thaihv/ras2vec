@@ -72,13 +72,13 @@ def fetch_buildings_or_zonesdata(filename):
     cv2.rectangle(img,(0,0),(w-1,h-1), (0,0,255),1)
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    cv2.imshow('HSV', img)
+    #cv2.imshow('HSV', img)
     
     low = (0,11,0)
     high = (179,255,255)
     # create masks
     mask = cv2.inRange(hsv, low, high)
-    cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
+    #cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
     contours, hier = cv2.findContours(mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
     for x in range(len(contours)):
@@ -102,13 +102,13 @@ def fetch_roadsdata(url):
 
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    cv2.imshow('HSV', img)
+    #cv2.imshow('HSV', img)
     
     low = (0,11,0)
     high = (179,255,255)
     # create masks
     mask = cv2.inRange(hsv, low, high)
-    cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
+    #cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
     
     # Create skeleton for lines to get more accurately
 #     thinned = cv2.ximgproc.thinning(mask)
@@ -397,7 +397,7 @@ def write_linestring2shpfile(outputfile, lines, interections):
     add_prj.close()
     print('Done! ', outputfile)
 
-def create_buildingslayer_in_database():
+def create_layers_in_database():
     global connection
     try:
         connection = psycopg2.connect(user = "postgres",
@@ -407,6 +407,7 @@ def create_buildingslayer_in_database():
                                       database = "ras2vec")
             
         cursor = connection.cursor()
+        # Buildings layers
         cursor.execute("DROP TABLE IF EXISTS Buildings;")
         query_createtable = '''CREATE TABLE Buildings
               (ID SERIAL PRIMARY KEY     NOT NULL,
@@ -418,27 +419,9 @@ def create_buildingslayer_in_database():
               Address TEXT,
               geom GEOMETRY DEFAULT NULL); '''
         cursor.execute(query_createtable)
-        #cursor.execute("CREATE EXTENSION postgis;")
         connection.commit()
-        print("Layer Buildings created!")
-    except (Exception, psycopg2.Error) as error :
-        print ("Error while connecting to PostgreSQL", error)
-    finally:
-        #closing database connection.
-        if(connection):
-            cursor.close()
-            connection.close()
-            print("PostgreSQL connection is closed")
-def create_roadslayer_in_database():
-    global connection
-    try:
-        connection = psycopg2.connect(user = "postgres",
-                                      password = "postgres",
-                                      host = "127.0.0.1",
-                                      port = "5432",
-                                      database = "ras2vec")
-            
-        cursor = connection.cursor()
+        print("Buildings Layer is created!")
+        # Road layers
         cursor.execute("DROP TABLE IF EXISTS Roads;")
         query_createtable = '''CREATE TABLE Roads
               (ID SERIAL PRIMARY KEY     NOT NULL,
@@ -449,28 +432,24 @@ def create_roadslayer_in_database():
               Jointly  BOOLEAN,
               Address TEXT,
               geom GEOMETRY DEFAULT NULL); '''
-        cursor.execute(query_createtable)
+        cursor.execute(query_createtable)        
+        
         #cursor.execute("CREATE EXTENSION postgis;")
         connection.commit()
-        print("Layer Roads created!")
+        print("Road Layer is created!")
     except (Exception, psycopg2.Error) as error :
         print ("Error while connecting to PostgreSQL", error)
-    finally:
-        #closing database connection.
+        #closing database connection if error.
         if(connection):
             cursor.close()
             connection.close()
-            print("PostgreSQL connection is closed")    
-                                             
-def write_buildings2database(tileX, tileY, polygons, theorybbox):
-    global connection
+            print("PostgreSQL connection is closed")
+    if(cursor):
+        cursor.close()    
+    return connection
+                 
+def write_buildings2database(connection, tileX, tileY, polygons, theorybbox):
     try:
-        connection = psycopg2.connect(user = "postgres",
-                                      password = "postgres",
-                                      host = "127.0.0.1",
-                                      port = "5432",
-                                      database = "ras2vec")
-            
         cursor = connection.cursor()
         # Process insert polygons
         multipolygon = []
@@ -519,79 +498,80 @@ def write_buildings2database(tileX, tileY, polygons, theorybbox):
             geom =  gpoly.wkb    
             value = (tileX, tileY, name, area, bJointly, address, geom)
             values_list.append(value)
+            print ("Inserted " + name)
                      
         psycopg2.extras.execute_batch(cursor, sql, values_list)
+        print ("Inserted all Buildings for Tile ",tileX, "_",tileY )
         connection.commit()
     except (Exception, psycopg2.Error) as error :
         print ("Error while connecting to PostgreSQL", error)
-    finally:
-        #closing database connection.
         if(connection):
             cursor.close()
             connection.close()
-            print("PostgreSQL connection is closed")        
-def write_roads2database(tileX, tileY, roadtype, lines, interections):
-    global connection
+            print("PostgreSQL connection is closed")
+    if(cursor):
+        cursor.close()             
+    return connection                
+def write_roads2database(connection, tileX, tileY, roadtype, lines, interections):
+    
+    intersect_points = []
+    values_list = []
+    if interections is not None:
+        for p in interections:
+            intersect_points.append(Point(p))
+        for i, l in enumerate(lines):
+            glinestring = LineString(l)
+            try:
+                segments = split_line_with_points(glinestring, intersect_points)
+                for n, s in enumerate(segments):
+                    geom = LineString(s.simplify(0.000003))
+                    name = 'linestring ' + str(i) + '_' + str(n)    
+                    address = 'Info'
+                    geom =  geom.wkb
+                    value = (tileX, tileY, name, roadtype, False, address, geom)
+                    values_list.append(value) 
+                    print ("Inserted " + name)                        
+
+            except:
+                geom = LineString(glinestring.simplify(0.000003))
+                name = 'linestring ' + str(i)  
+                address = 'Info'
+                geom =  geom.wkb  
+                value = (tileX, tileY, name, roadtype, False, address, geom)
+                values_list.append(value)
+                print ("Inserted " + name)
+    else:
+        for i, l in enumerate(lines):
+            try:
+                geom = LineString(l)
+                geom = LineString(geom.simplify(0.000003))
+                name = 'linestring ' + str(i)  
+                address = 'Info'
+                geom =  geom.wkb
+                value = (tileX, tileY, name, roadtype, False, address, geom)
+                values_list.append(value)
+                print ("Inserted " + name)                      
+            except:
+                return    
     try:
-        connection = psycopg2.connect(user = "postgres",
-                                      password = "postgres",
-                                      host = "127.0.0.1",
-                                      port = "5432",
-                                      database = "ras2vec")
-            
         cursor = connection.cursor()
         sql = """
             INSERT INTO Roads(X, Y, Name, Type, Jointly, Address, geom)
             VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326))
         """
-        intersect_points = []
-        values_list = []
-        if interections is not None:
-            for p in interections:
-                intersect_points.append(Point(p))
-            for i, l in enumerate(lines):
-                glinestring = LineString(l)
-                try:
-                    segments = split_line_with_points(glinestring, intersect_points)
-                    for n, s in enumerate(segments):
-                        geom = LineString(s.simplify(0.000003))
-                        name = 'linestring ' + str(i) + '_' + str(n)    
-                        address = 'Info'
-                        geom =  geom.wkb
-                        value = (tileX, tileY, name, roadtype, False, address, geom)
-                        values_list.append(value)                         
-
-                except:
-                    geom = LineString(glinestring.simplify(0.000003))
-                    name = 'linestring ' + str(i)  
-                    address = 'Info'
-                    geom =  geom.wkb  
-                    value = (tileX, tileY, name, roadtype, False, address, geom)
-                    values_list.append(value)
-        else:
-            for i, l in enumerate(lines):
-                try:
-                    geom = LineString(l)
-                    geom = LineString(geom.simplify(0.000003))
-                    name = 'linestring ' + str(i)  
-                    address = 'Info'
-                    geom =  geom.wkb
-                    value = (tileX, tileY, name, roadtype, False, address, geom)
-                    values_list.append(value)                      
-                except:
-                    return        
-        
         psycopg2.extras.execute_batch(cursor, sql, values_list)
+        print ("Inserted all Roads for Tile", tileX, "_",tileY)
         connection.commit()
                 
     except (Exception, psycopg2.Error) as error :
         print ("Error while connecting to PostgreSQL", error)
-    finally:
-        #closing database connection.
         if(connection):
             cursor.close()
             connection.close()
-            print("PostgreSQL connection is closed")    
+            print("PostgreSQL connection is closed")
+    if(cursor):
+        cursor.close()             
+    return connection    
 # From: https://stackoverflow.com/questions/47106276/converting-pixels-to-latlng-coordinates-from-google-static-image
 def getPointLatLngFromPixel(x, y, centerlat, centerlon, imagesize= 640, zoom = 18):
     parallelMultiplier = math.cos(centerlat * math.pi / 180)
