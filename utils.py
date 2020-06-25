@@ -22,7 +22,8 @@ import shapely.ops as ops
 import shapely.geometry as geometry
 from functools import partial
 from osgeo import osr
-from _pylief import NONE
+import psycopg2.extras
+
 
 
 def set_display_range(inputimage, ranges):
@@ -395,8 +396,8 @@ def write_linestring2shpfile(outputfile, lines, interections):
     add_prj.write(epsg)
     add_prj.close()
     print('Done! ', outputfile)
-    
-def write_polygons2database(tablename, polygons, theorybbox):
+
+def create_buildingslayer_in_database():
     global connection
     try:
         connection = psycopg2.connect(user = "postgres",
@@ -406,10 +407,8 @@ def write_polygons2database(tablename, polygons, theorybbox):
                                       database = "ras2vec")
             
         cursor = connection.cursor()
-        #Run at first time
-        #cursor.execute("CREATE EXTENSION postgis;")
-        cursor.execute("DROP TABLE IF EXISTS " + tablename + ";")
-        query_createtable = '''CREATE TABLE ''' + tablename + '''
+        cursor.execute("DROP TABLE IF EXISTS Buildings;")
+        query_createtable = '''CREATE TABLE Buildings
               (ID SERIAL PRIMARY KEY     NOT NULL,
               Name           TEXT,
               CalcArea         REAL,
@@ -417,7 +416,58 @@ def write_polygons2database(tablename, polygons, theorybbox):
               Address TEXT,
               geom GEOMETRY DEFAULT NULL); '''
         cursor.execute(query_createtable)
-        print("Table %s created successfully in PostgreSQL " % tablename)
+        #cursor.execute("CREATE EXTENSION postgis;")
+        connection.commit()
+        print("Layer Buildings created!")
+    except (Exception, psycopg2.Error) as error :
+        print ("Error while connecting to PostgreSQL", error)
+    finally:
+        #closing database connection.
+        if(connection):
+            cursor.close()
+            connection.close()
+            print("PostgreSQL connection is closed")
+def create_roadslayer_in_database():
+    global connection
+    try:
+        connection = psycopg2.connect(user = "postgres",
+                                      password = "postgres",
+                                      host = "127.0.0.1",
+                                      port = "5432",
+                                      database = "ras2vec")
+            
+        cursor = connection.cursor()
+        cursor.execute("DROP TABLE IF EXISTS Roads;")
+        query_createtable = '''CREATE TABLE Roads
+              (ID SERIAL PRIMARY KEY     NOT NULL,
+              Name           TEXT,
+              CalcArea         REAL,
+              Jointly  BOOLEAN,
+              Address TEXT,
+              geom GEOMETRY DEFAULT NULL); '''
+        cursor.execute(query_createtable)
+        #cursor.execute("CREATE EXTENSION postgis;")
+        connection.commit()
+        print("Layer Roads created!")
+    except (Exception, psycopg2.Error) as error :
+        print ("Error while connecting to PostgreSQL", error)
+    finally:
+        #closing database connection.
+        if(connection):
+            cursor.close()
+            connection.close()
+            print("PostgreSQL connection is closed")    
+                                             
+def write_buildings2database(polygons, theorybbox):
+    global connection
+    try:
+        connection = psycopg2.connect(user = "postgres",
+                                      password = "postgres",
+                                      host = "127.0.0.1",
+                                      port = "5432",
+                                      database = "ras2vec")
+            
+        cursor = connection.cursor()
         # Process insert polygons
         multipolygon = []
         for n, p in enumerate(polygons):
@@ -441,22 +491,47 @@ def write_polygons2database(tablename, polygons, theorybbox):
         geom_boundary = theorybbox.wkb
         area = calculate_polygon_area_in_m2(theorybbox)
         
-        cursor.execute('INSERT INTO ' + tablename + '(Name, CalcArea, Jointly, Address, geom)'
+        cursor.execute('INSERT INTO Buildings(Name, CalcArea, Jointly, Address, geom)'
                        'VALUES (%(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
                        {'name': name, 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : geom_boundary})
-        
+
+
+
+        sql = """
+            INSERT INTO Buildings(Name, CalcArea, Jointly, Address, geom)
+            VALUES %s
+        """
+        values_list = []
         for n, p in enumerate(polygons):
             gpoly = Polygon(p)          
             # Identify jointly polygon
-            bJointly = 0
+            bJointly = False
             if boundarylines.touches(gpoly):
-                bJointly = 1  
-            #gpoly = gpoly.simplify(0.000005)           
-            area = calculate_polygon_area_in_m2(gpoly)    
+                bJointly = True           
+            area = calculate_polygon_area_in_m2(gpoly)
+            name = 'polygon' + str(n+1)    
             address = 'Info'     
-            cursor.execute('INSERT INTO ' + tablename + '(Name, CalcArea, Jointly, Address, geom)'
-                           'VALUES (%(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
-                           {'name': 'polygon' + str(n+1), 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : gpoly.wkb})    
+            value = [(name, area, bJointly, address, gpoly.wkb )]
+            values_list.append(value)
+                     
+        psycopg2.extras.execute_batch(cursor, sql, values_list, page_size=1000)
+        
+#         for n, p in enumerate(polygons):
+#             gpoly = Polygon(p)          
+#             # Identify jointly polygon
+#             bJointly = 0
+#             if boundarylines.touches(gpoly):
+#                 bJointly = 1  
+#             #gpoly = gpoly.simplify(0.000005)           
+#             area = calculate_polygon_area_in_m2(gpoly)    
+#             address = 'Info'     
+#             cursor.execute('INSERT INTO ' + tablename + '(Name, CalcArea, Jointly, Address, geom)'
+#                            'VALUES (%(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
+#                            {'name': 'polygon' + str(n+1), 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : gpoly.wkb})  
+            
+            
+            
+              
 
         connection.commit()
     except (Exception, psycopg2.Error) as error :
@@ -467,7 +542,24 @@ def write_polygons2database(tablename, polygons, theorybbox):
             cursor.close()
             connection.close()
             print("PostgreSQL connection is closed")        
-    
+def write_roads2database(lines, interections):
+    global connection
+    try:
+        connection = psycopg2.connect(user = "postgres",
+                                      password = "postgres",
+                                      host = "127.0.0.1",
+                                      port = "5432",
+                                      database = "ras2vec")
+            
+        cursor = connection.cursor()
+    except (Exception, psycopg2.Error) as error :
+        print ("Error while connecting to PostgreSQL", error)
+    finally:
+        #closing database connection.
+        if(connection):
+            cursor.close()
+            connection.close()
+            print("PostgreSQL connection is closed")    
 # From: https://stackoverflow.com/questions/47106276/converting-pixels-to-latlng-coordinates-from-google-static-image
 def getPointLatLngFromPixel(x, y, centerlat, centerlon, imagesize= 640, zoom = 18):
     parallelMultiplier = math.cos(centerlat * math.pi / 180)

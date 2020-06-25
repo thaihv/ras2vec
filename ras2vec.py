@@ -352,7 +352,8 @@ def create_polygons_shapefile(polygons):
     
     utils.write_polygons2shpfile(outputshpfile, gis_polygons,theorybbox)
     
-    utils.write_polygons2database(tablename, gis_polygons,theorybbox)
+    utils.create_buildingslayer_in_database()
+    utils.write_buildings2database(gis_polygons,theorybbox)
     
     return outputshpfile
 def create_polyline_shapefile(polylines, intersections):    
