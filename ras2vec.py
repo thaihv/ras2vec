@@ -391,7 +391,10 @@ print("--- Start %s ---" % start_time)
 # output_data_folder_path= 'C:\Download\Data\Output\Hanoi\\'
 # process_all_layers_to_shapefile(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
 process_all_layers_into_database(input_data_folder_path, lat , lon, imagesize, zoom, 'png')
-print("--- Total time has been taken: %s seconds ---" % str(datetime.timedelta((time.time() - start_time))) )
+
+seconds = time.time() - start_time
+
+print("--- Total time taken: %s seconds ---" % time.strftime("%H:%M:%S",time.gmtime(seconds)))
 
 
     
