@@ -11,6 +11,7 @@ from skimage.morphology import skeletonize, thin, medial_axis
 
 from shapely.geometry import Polygon
 import time
+import datetime
 import os
 import utils
 from pathlib import Path
@@ -47,7 +48,7 @@ styleHighwayRoad = quote('feature:road.highway|element:geometry.stroke|visibilit
 styleHighwayControlledAccessRoad = quote('feature:road.highway.controlled_access|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 
-style = styleBuildings
+style = styleLocalRoad
 roadtype = 'Highways'
 
 if style == styleBuildings:     
@@ -138,10 +139,14 @@ def fetch_onlinebuildingsdata(url, dest_img):
     return buildings
 
 def fetch_onlineroaddata(url, dest_img):
-    url = url + getpostition + getzoom + getsize
+    #url = url + getpostition + getzoom + getsize
+    
+    url = 'C:/Download/Data/Hanoi/LocalRoads/-1/0.png' 
+    
     roads = []
     img = io.imread(url)
-
+    cv2.imshow("Origin", img)
+    
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     cv2.imshow('HSV', img)
@@ -151,7 +156,7 @@ def fetch_onlineroaddata(url, dest_img):
     # create masks
     mask = cv2.inRange(hsv, low, high)
     cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
-
+  
     # Create skeleton for lines to get more accurately
     #thinned = cv2.ximgproc.thinning(mask) # Not good
     
@@ -233,6 +238,9 @@ def fetch_onlineroaddata(url, dest_img):
         cv2.circle(fullSatelliteImg, point, 3, (225,0,255), 3 )
         cv2.circle(dest_img, point, 3, (225,0,255), 3 )
 
+    if cv2.waitKey(0) & 0xFF == ord('q'): 
+        cv2.destroyAllWindows()  
+        
     return roads, intersections
 def convert_pixelarrays2worldcoordinate(pointsarrays, centerlat, centerlon, zoom = 18, tilezise = 640):
     gis_pointsarray = []
@@ -275,18 +283,14 @@ def create_polygons_shapefile(polygons):
     
     utils.write_polygons2shpfile(outputshpfile, gis_polygons,theorybbox)
     
-    utils.create_layers_in_database()
-    utils.write_buildings2database(0, 0, gis_polygons,theorybbox)
-    
     return outputshpfile
 def create_polyline_shapefile(polylines, intersections):    
     gis_polylines = convert_pixelarrays2worldcoordinate(polylines, lat , lon, zoom)
     intersectpoints = convert_a_pixel_list2worldcoordinate(intersections, lat , lon, zoom)
     print ("INTER : " , intersectpoints)
+    
     utils.write_linestring2shpfile(outputshpfile, gis_polylines, intersectpoints)
     
-    utils.create_layers_in_database()
-    utils.write_roads2database(0, 0, 'Highway', gis_polylines, intersectpoints)
     return outputshpfile
 
 def process_all_layers_to_shapefile(input_data_folder_path, output_data_folder_path, org_lat , org_lon, tilesize = 640, zoom = 18, tileformat = 'png'):
@@ -338,18 +342,22 @@ def process_all_layers_into_database(input_data_folder_path, org_lat , org_lon, 
                         i = int(X)
                         j = int(Y)
                         lat, lon = utils.getPointLatLngFromPixel(int(tilesize /2) + (i * tilesize), int(tilesize /2) + (j * tilesize), org_lat, org_lon, tilesize, zoom)
-                        if dir_name == str('Buildings'):                            
+                        if dir_name == str('Buildings'):                      
                             building_polygons = utils.fetch_buildings_or_zonesdata(tile_name)
-                            
                             gis_polygons = convert_pixelarrays2worldcoordinate(building_polygons, lat , lon, zoom)
-                            minx, miny, maxx, maxy = calculate_bbox_tiles(lat, lon, tilesize, zoom)
                             
-                            theorybbox = Polygon([(miny, minx), (miny, maxx), (maxy, maxx), (maxy, minx), (miny, minx)]) 
-                                                       
-                            utils.write_buildings2database(connection, i, j, gis_polygons,theorybbox)                            
+                            # Insert data into TileGrid layers
+                            minx, miny, maxx, maxy = calculate_bbox_tiles(lat, lon, tilesize, zoom)
+                            theorybbox = Polygon([(miny, minx), (miny, maxx), (maxy, maxx), (maxy, minx), (miny, minx)])
+                            utils.write_tilegrid2database(connection, i, j, theorybbox)
+                            # Insert data into Buildings layers                           
+                            utils.write_buildings2database(connection, i, j, gis_polygons,theorybbox)                          
                         elif dir_name == str('Highways') or dir_name == str('LocalRoads') or dir_name == str('ArterialRoads') or dir_name == str('ControlledAccessRoads'):
+                            if (i == -1) and (j == 0):
+                                print("I am here")     
                             roads, jointpoints = utils.fetch_roadsdata(tile_name)
                             gis_polylines = convert_pixelarrays2worldcoordinate(roads, lat , lon, zoom)
+                            # Insert data into Roads layers
                             utils.write_roads2database(connection, i, j, dir_name, gis_polylines, None)
  
                         
@@ -362,7 +370,7 @@ def process_all_layers_into_database(input_data_folder_path, org_lat , org_lon, 
 #     building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
 #     created_file = create_polygons_shapefile(building_polygons)
 # else:
-#     # Create shape file for roads in poly lines 
+#     # Create shape file for roads in poly lines
 #     roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
 #     created_file = create_polyline_shapefile(roads, intersections)
 # cv2.imshow('Satellite', fullSatelliteImg)
@@ -383,7 +391,7 @@ print("--- Start %s ---" % start_time)
 # output_data_folder_path= 'C:\Download\Data\Output\Hanoi\\'
 # process_all_layers_to_shapefile(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
 process_all_layers_into_database(input_data_folder_path, lat , lon, imagesize, zoom, 'png')
-print("--- Total time has been taken: %s seconds ---" % (time.time() - start_time))
+print("--- Total time has been taken: %s seconds ---" % str(datetime.timedelta((time.time() - start_time))) )
 
 
     

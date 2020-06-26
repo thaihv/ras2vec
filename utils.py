@@ -82,17 +82,14 @@ def fetch_buildings_or_zonesdata(filename):
     contours, hier = cv2.findContours(mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
     for x in range(len(contours)):
-        print()
         # if a contour has not contours inside of it, draw the shape filled
         c = hier[0][x][2]
         if c == -1:
             #cv2.drawContours(fullSatelliteImg,[contours[x]],0,(0,0,255),-1)
             cnt = [contours[x]][0]
-            if cv2.contourArea(cnt) > 20:
+            if (cv2.contourArea(cnt) > 20) and (cv2.contourArea(cnt) < 400000): # Max Area is boundary of 640 * 640 = 409600
                 epsilon = 0.0001*cv2.arcLength(cnt, True)
                 approx = cv2.approxPolyDP(cnt, epsilon, True)
-#                 cv2.drawContours(fullSatelliteImg, [approx], -1, (0,0,255), -1)
-#                 cv2.drawContours(fullRoadmapImg, [approx], -1, (0,0,255), -1)
                 buildings.append(approx)
                 #buildings.append(cnt)             
     return buildings
@@ -348,8 +345,8 @@ def write_linestring2shpfile(outputfile, lines, interections):
             for p in interections:
                 intersect_points.append(Point(p))
             for i, l in enumerate(lines):
-                print(l)
-                print("---->")
+                if (len(l) == 1):
+                    continue
                 glinestring = LineString(l)
                 print (glinestring.is_ring)
                 try:
@@ -373,6 +370,8 @@ def write_linestring2shpfile(outputfile, lines, interections):
 
         else:
             for i, l in enumerate(lines):
+                if (len(l) == 1):
+                    continue                
                 try:
                     glinestring = LineString(l)
                     glinestring = glinestring.simplify(0.000003)
@@ -407,6 +406,18 @@ def create_layers_in_database():
                                       database = "ras2vec")
             
         cursor = connection.cursor()
+        # Tilegrid layers
+        cursor.execute("DROP TABLE IF EXISTS TileGrid;")
+        query_createtable = '''CREATE TABLE TileGrid
+              (ID SERIAL PRIMARY KEY     NOT NULL,
+              X  INT     NOT NULL, 
+              Y  INT     NOT NULL,             
+              CalcArea         REAL,
+              geom GEOMETRY DEFAULT NULL); '''
+        cursor.execute(query_createtable)
+        connection.commit()
+        print("TileGrid Layer is created!")
+        
         # Buildings layers
         cursor.execute("DROP TABLE IF EXISTS Buildings;")
         query_createtable = '''CREATE TABLE Buildings
@@ -449,8 +460,32 @@ def create_layers_in_database():
     if(cursor):
         cursor.close()    
     return connection
-                 
+def write_tilegrid2database(connection, tileX, tileY, theorybbox):
+    try:
+        cursor = connection.cursor()
+        geom_boundary = theorybbox.wkb
+        area = calculate_polygon_area_in_m2(theorybbox)
+
+        cursor.execute('INSERT INTO TileGrid(X, Y, CalcArea, geom)'
+                       'VALUES (%(X)s, %(Y)s, %(area)s, ST_GeomFromWKB(%(geom)s::geometry, 4326))',
+                       {'X': tileX,'Y': tileY, 'area': str(area), 'geom' : geom_boundary})
+
+        connection.commit()
+        print ("Inserted TileGrid for Tile ",tileX, "_",tileY )
+
+    except (Exception, psycopg2.Error) as error :
+        print ("Error while connecting to PostgreSQL", error)
+        if(connection):
+            cursor.close()
+            connection.close()
+            print("PostgreSQL connection is closed")
+    if(cursor):
+        cursor.close()             
+    return connection       
+                     
 def write_buildings2database(connection, tileX, tileY, polygons, theorybbox):
+    if len(polygons) == 0:
+        return connection
     # Process insert polygons
     multipolygon = []
     for n, p in enumerate(polygons):
@@ -495,20 +530,6 @@ def write_buildings2database(connection, tileX, tileY, polygons, theorybbox):
     
     try:
         cursor = connection.cursor()
-
-        name = 'polygon_0'
-        bJointly = 0
-        address = 'Boundary'
-        geom_boundary = theorybbox.wkb
-        area = calculate_polygon_area_in_m2(theorybbox)
-        center_point = Point(theorybbox.centroid._get_coords()[0][0], theorybbox.centroid._get_coords()[0][1])
-        center_point = center_point.wkb
-        cursor.execute('INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom, cent_point)'
-                       'VALUES (%(X)s, %(Y)s, %(name)s, %(area)s, %(bJointly)s, %(address)s, ST_GeomFromWKB(%(geom)s::geometry, 4326), ST_GeomFromWKB(%(center_point)s::geometry, 4326))',
-                       {'X': tileX,'Y': tileY, 'name': name, 'area': str(area), 'bJointly' : str(bJointly), 'address': address, 'geom' : geom_boundary, 'center_point' : center_point})
-
-        connection.commit()
-
         sql = """
             INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom, cent_point)
             VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326), ST_GeomFromWKB(%s::geometry, 4326))
@@ -533,6 +554,8 @@ def write_roads2database(connection, tileX, tileY, roadtype, lines, interections
         for p in interections:
             intersect_points.append(Point(p))
         for i, l in enumerate(lines):
+            if (len(l) == 1):
+                continue
             glinestring = LineString(l)
             try:
                 segments = split_line_with_points(glinestring, intersect_points)
@@ -559,6 +582,8 @@ def write_roads2database(connection, tileX, tileY, roadtype, lines, interections
                 print ("Verified " + name)
     else:
         for i, l in enumerate(lines):
+            if (len(l) == 1):
+                continue
             try:
                 geom = LineString(l)
                 geom = LineString(geom.simplify(0.000003))
