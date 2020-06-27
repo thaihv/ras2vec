@@ -27,12 +27,12 @@ from pathlib import Path
 # lon = 105.781349
 
 #test highway
-# lat = 21.0813699
-# lon = 105.7887625
+lat = 21.0813699
+lon = 105.7887625
 
 # Ha Noi Center
-lat = 20.97503280639646
-lon = 105.65287399291995
+# lat = 20.97503280639646
+# lon = 105.65287399291995
 
 
 zoom = 18
@@ -48,7 +48,7 @@ styleHighwayRoad = quote('feature:road.highway|element:geometry.stroke|visibilit
 styleHighwayControlledAccessRoad = quote('feature:road.highway.controlled_access|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 styleLocalRoad = quote('feature:road.local|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 
-style = styleLocalRoad
+style = styleHighwayRoad
 roadtype = 'Highways'
 
 if style == styleBuildings:     
@@ -145,17 +145,17 @@ def fetch_onlineroaddata(url, dest_img):
     
     roads = []
     img = io.imread(url)
-    cv2.imshow("Origin", img)
+    #cv2.imshow("Origin", img)
     
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    cv2.imshow('HSV', img)
+    #cv2.imshow('HSV', img)
     
     low = (0,11,0)
     high = (179,255,255)
     # create masks
     mask = cv2.inRange(hsv, low, high)
-    cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
+    #cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
   
     # Create skeleton for lines to get more accurately
     #thinned = cv2.ximgproc.thinning(mask) # Not good
@@ -186,7 +186,7 @@ def fetch_onlineroaddata(url, dest_img):
 #     fig.tight_layout()
 #     plt.show()
 
-    intersections, endpoints = utils.getSkeletonIntersection(thinned)
+    intersections = utils.getSkeletonIntersections(thinned)
     
     contours, hier = cv2.findContours(thinned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     #contours, hier = cv2.findContours(thinned, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -224,6 +224,8 @@ def fetch_onlineroaddata(url, dest_img):
                         x = points[i] 
                         y = points[i + 1]
                         cv2.putText(fullSatelliteImg, "End", (x , y),  font, 0.5, (0, 0, 255))
+                        
+            #segments = utils.split_line_with_points(glinestring, intersect_points)
 #             epsilon = 0.001*cv2.arcLength(cnt, True)
 #             approx = cv2.approxPolyDP(cnt, epsilon, False)
 #             cv2.drawContours(fullSatelliteImg,[approx],0,(0,255,0),1)
@@ -233,21 +235,15 @@ def fetch_onlineroaddata(url, dest_img):
     for n, section in enumerate(intersections):
         cv2.circle(fullSatelliteImg, section, 3, (0,0,255), 3 )
         cv2.circle(dest_img, section, 3, (0,0,255), 3 )
-        cv2.putText(fullSatelliteImg, str(n), section,  font, 0.5, (0, 0, 255))
-    for n, point in enumerate(endpoints):
-        cv2.circle(fullSatelliteImg, point, 3, (225,0,255), 3 )
-        cv2.circle(dest_img, point, 3, (225,0,255), 3 )
-
-    if cv2.waitKey(0) & 0xFF == ord('q'): 
-        cv2.destroyAllWindows()  
-        
+        p = (section[0] + 10,section[1] + 10)
+        cv2.putText(dest_img, str(n), p,  font, 0.5, (255, 0, 255))
     return roads, intersections
+
 def convert_pixelarrays2worldcoordinate(pointsarrays, centerlat, centerlon, zoom = 18, tilezise = 640):
     gis_pointsarray = []
     # Calculate next tile from X, Y = (320,320) as tile size = 640 
-    newLatCenter, newLonCenter = utils.getPointLatLngFromPixel(320, 320 + 640, centerlat, centerlon, tilezise, zoom)
+    #newLatCenter, newLonCenter = utils.getPointLatLngFromPixel(320, 320 + 640, centerlat, centerlon, tilezise, zoom)
     #print ("Center Info: Tile (X,Y) is centered at [%s , %s] AND (X, Y + 1) is centered at [%s , %s]" % (centerlat, centerlon, newLatCenter, newLonCenter))
-    
     for n, p in enumerate(pointsarrays):
         points = []
         for j in p:
@@ -364,19 +360,19 @@ def process_all_layers_into_database(input_data_folder_path, org_lat , org_lon, 
     if(connection):
         connection.close()                            
 # Run test for get data online
-# created_file = None
-# if (style == styleBuildings) or (style == styleZones):    
-#     # Create shape file for buildings and zones in polygons    
-#     building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
-#     created_file = create_polygons_shapefile(building_polygons)
-# else:
-#     # Create shape file for roads in poly lines
-#     roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
-#     created_file = create_polyline_shapefile(roads, intersections)
-# cv2.imshow('Satellite', fullSatelliteImg)
-# cv2.imshow('Roadmap', fullRoadmapImg)
-# if cv2.waitKey(0) & 0xFF == ord('q'): 
-#     cv2.destroyAllWindows()     
+created_file = None
+if (style == styleBuildings) or (style == styleZones):    
+    # Create shape file for buildings and zones in polygons    
+    building_polygons = fetch_onlinebuildingsdata(workingUrl, fullRoadmapImg)
+    created_file = create_polygons_shapefile(building_polygons)
+else:
+    # Create shape file for roads in poly lines
+    roads, intersections = fetch_onlineroaddata(workingUrl,fullRoadmapImg)
+    created_file = create_polyline_shapefile(roads, intersections)
+cv2.imshow('Satellite', fullSatelliteImg)
+cv2.imshow('Roadmap', fullRoadmapImg)
+if cv2.waitKey(0) & 0xFF == ord('q'): 
+    cv2.destroyAllWindows()     
     
 # if created_file is not None:
 #     utils.display_shpinfo(created_file)
@@ -384,17 +380,15 @@ def process_all_layers_into_database(input_data_folder_path, org_lat , org_lon, 
 
     
 # Run test for get data offline
-input_data_folder_path = 'C:\Download\Data\Hanoi\\'
-start_time = time.time()
-print("--- Start %s ---" % start_time)
-# Case of create shape file, need output directory 
-# output_data_folder_path= 'C:\Download\Data\Output\Hanoi\\'
-# process_all_layers_to_shapefile(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
-process_all_layers_into_database(input_data_folder_path, lat , lon, imagesize, zoom, 'png')
-
-seconds = time.time() - start_time
-
-print("--- Total time taken: %s seconds ---" % time.strftime("%H:%M:%S",time.gmtime(seconds)))
+# input_data_folder_path = 'C:\Download\Data\Hanoi\\'
+# start_time = time.time()
+# print("--- Start %s ---" % start_time)
+# # Case of create shape file, need output directory 
+# # output_data_folder_path= 'C:\Download\Data\Output\Hanoi\\'
+# # process_all_layers_to_shapefile(input_data_folder_path, output_data_folder_path, lat , lon, imagesize, zoom, 'png')
+# process_all_layers_into_database(input_data_folder_path, lat , lon, imagesize, zoom, 'png')
+# seconds = time.time() - start_time
+# print("--- Total time taken: %s seconds ---" % time.strftime("%H:%M:%S",time.gmtime(seconds)))
 
 
     

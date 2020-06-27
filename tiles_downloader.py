@@ -6,7 +6,8 @@ Created on Jun 14, 2020
 import cv2    
 from requests.utils import quote
 from skimage import io
-
+import time
+import datetime
 import os
 import utils
 
@@ -53,23 +54,29 @@ def create_offlinedata(url, org_lat, org_lon, tilezise, zoom, dest_folder, tilen
         
         for i in range(-tilenum , tilenum + 1):
             for j in range(-tilenum , tilenum + 1):
-                lat, lon = utils.getPointLatLngFromPixel(int(tilezise /2) + (i * tilezise), int(tilezise /2) + (j * tilezise), org_lat, org_lon, tilezise, zoom)
-                getpostition = "&center=" + str(lat) + "," + str(lon)
-                print ("X = %d; Y= %d" % (i, j), getpostition)
-                url_new = geturl + getpostition
-                
-                img = io.imread(url_new)
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 
                 directory = dest_folder + childfolder +"\\" + str(i)
                 if not os.path.exists(directory):
                     os.makedirs(directory)    
                 filename = directory + "\%d.png" % (j)
-                cv2.imwrite(filename, img)
+                if not os.path.isfile(filename):               
+                    lat, lon = utils.getPointLatLngFromPixel(int(tilezise /2) + (i * tilezise), int(tilezise /2) + (j * tilezise), org_lat, org_lon, tilezise, zoom)
+                    getpostition = "&center=" + str(lat) + "," + str(lon)
+                    print ("X = %d; Y= %d" % (i, j), getpostition)
+                    url_new = geturl + getpostition
+                    
+                    img = io.imread(url_new)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    cv2.imwrite(filename, img)
+                else:
+                    print (filename + ' for tile (%s,%s) existed.' % (i,j) + ' Skip downloading it')
     print('Download Google Static Map OK!')
 
 #id = 23 --> Ha noi
 lat, lon, tilenum = utils.get_metadata_dowload_info(23)
 
-gg_folder = 'C:\Download\Data\Hanoi\\'
-create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 10)
+gg_folder = 'C:\Download\Data\Hanoi_full\\'
+start_time = time.time()
+create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 50)
+seconds = time.time() - start_time
+print("--- Total time taken: %s seconds ---" % time.strftime("%H:%M:%S",time.gmtime(seconds)))

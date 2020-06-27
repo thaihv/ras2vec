@@ -17,7 +17,7 @@ import numpy as np
 from shapely.ops import split
 
 import json
-from shapely.geometry import Polygon, LineString, Point, MultiLineString
+from shapely.geometry import Polygon, LineString, Point
 import shapely.ops as ops
 import shapely.geometry as geometry
 from functools import partial
@@ -637,7 +637,7 @@ def neighbours(x,y,image):
     img = image
     x_1, y_1, x1, y1 = x-1, y-1, x+1, y+1;
     return [ img[x_1][y], img[x_1][y1], img[x][y1], img[x1][y1], img[x1][y], img[x1][y_1], img[x][y_1], img[x_1][y_1] ] 
-def getSkeletonIntersection(skeleton):
+def getSkeletonIntersectionsAndEndPoints(skeleton):
     """ Given a skeletonised image, it will give the coordinates of the intersections of the skeleton.
 
     Keyword arguments:
@@ -698,4 +698,43 @@ def getSkeletonIntersection(skeleton):
     endpoints = list(set(endpoints));
     
     return intersections, endpoints;
+def getSkeletonIntersections(skeleton):
+
+    validIntersection = [[0,1,0,1,0,0,1,0],[0,0,1,0,1,0,0,1],[1,0,0,1,0,1,0,0],
+                         [0,1,0,0,1,0,1,0],[0,0,1,0,0,1,0,1],[1,0,0,1,0,0,1,0],
+                         [0,1,0,0,1,0,0,1],[1,0,1,0,0,1,0,0],[0,1,0,0,0,1,0,1],
+                         [0,1,0,1,0,0,0,1],[0,1,0,1,0,1,0,0],[0,0,0,1,0,1,0,1],
+                         [1,0,1,0,0,0,1,0],[1,0,1,0,1,0,0,0],[0,0,1,0,1,0,1,0],
+                         [1,0,0,0,1,0,1,0],[1,0,0,1,1,1,0,0],[0,0,1,0,0,1,1,1],
+                         [1,1,0,0,1,0,0,1],[0,1,1,1,0,0,1,0],[1,0,1,1,0,0,1,0],
+                         [1,0,1,0,0,1,1,0],[1,0,1,1,0,1,1,0],[0,1,1,0,1,0,1,1],
+                         [1,1,0,1,1,0,1,0],[1,1,0,0,1,0,1,0],[0,1,1,0,1,0,1,0],
+                         [0,0,1,0,1,0,1,1],[1,0,0,1,1,0,1,0],[1,0,1,0,1,1,0,1],
+                         [1,0,1,0,1,1,0,0],[1,0,1,0,1,0,0,1],[0,1,0,0,1,0,1,1],
+                         [0,1,1,0,1,0,0,1],[1,1,0,1,0,0,1,0],[0,1,0,1,1,0,1,0],
+                         [0,0,1,0,1,1,0,1],[1,0,1,0,0,1,0,1],[1,0,0,1,0,1,1,0],
+                         [1,0,1,1,0,1,0,0],[1,0,0,0,0,0,0,0],[0,1,0,0,0,0,0,0],
+                         [0,0,1,0,0,0,0,0],[0,0,0,1,0,0,0,0],[0,0,0,0,1,0,0,0],
+                         [0,0,0,0,0,1,0,0],[0,0,0,0,0,0,1,0],[0,0,0,0,0,0,0,1]];
+                         
+                             
+    image = skeleton.copy();
+    image = image/255;
+    intersections = list();
+    for x in range(1,len(image)-1):
+        for y in range(1,len(image[x])-1):
+            # If we have a white pixel
+            if image[x][y] == 1:
+                nbs = neighbours(x,y,image);
+                valid = True;
+                if nbs in validIntersection:
+                    intersections.append((y,x));    
+    # Filter intersections to make sure we don't count them twice or ones that are very close together
+    for point1 in intersections:
+        for point2 in intersections:
+            if (((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2) < 10**2) and (point1 != point2):
+                intersections.remove(point2);
+    # Remove duplicates
+    intersections = list(set(intersections));
+    return intersections;
     
