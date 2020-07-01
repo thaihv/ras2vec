@@ -10,6 +10,7 @@ import time
 import datetime
 import os
 import utils
+import urllib.request
 
 styleBuildings = quote('feature:landscape.man_made|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
 styleZones = quote('feature:road|element:geometry.stroke|visibility:on|color:0xff0000|weight:1')
@@ -65,6 +66,12 @@ def create_offlinedata(url, org_lat, org_lon, tilezise, zoom, dest_folder, tilen
                     print ("X = %d; Y= %d" % (i, j), getpostition)
                     url_new = geturl + getpostition
                     
+                    
+#                     req = urllib.request.Request(url_new, headers={'User-Agent': 'Mozilla/5.0'})
+#                     r = urllib.request.urlopen(req).read()
+# 
+#                     img = io.imread(r)
+                    
                     img = io.imread(url_new)
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     cv2.imwrite(filename, img)
@@ -75,8 +82,8 @@ def create_offlinedata(url, org_lat, org_lon, tilezise, zoom, dest_folder, tilen
 #id = 23 --> Ha noi
 lat, lon, tilenum = utils.get_metadata_dowload_info(23)
 
-gg_folder = 'C:\Download\Data\Hanoi_full\\'
+gg_folder = 'C:\Download\Data\Hanoi_1\\'
 start_time = time.time()
-create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 50)
+create_offlinedata(downloadUrl, lat, lon, tilezise, zoom, gg_folder, 3)
 seconds = time.time() - start_time
 print("--- Total time taken: %s seconds ---" % time.strftime("%H:%M:%S",time.gmtime(seconds)))

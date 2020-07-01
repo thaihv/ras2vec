@@ -88,10 +88,10 @@ def fetch_buildings_or_zonesdata(filename):
             #cv2.drawContours(fullSatelliteImg,[contours[x]],0,(0,0,255),-1)
             cnt = [contours[x]][0]
             if (cv2.contourArea(cnt) > 20) and (cv2.contourArea(cnt) < 400000): # Max Area is boundary of 640 * 640 = 409600
-                epsilon = 0.0001*cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, epsilon, True)
-                buildings.append(approx)
-                #buildings.append(cnt)             
+#                 epsilon = 0.0001*cv2.arcLength(cnt, True)
+#                 approx = cv2.approxPolyDP(cnt, epsilon, True)
+#                 buildings.append(approx)
+                buildings.append(cnt)             
     return buildings
 def fetch_roadsdata(url):
     roads = []
@@ -108,9 +108,6 @@ def fetch_roadsdata(url):
     #cv2.imshow("REMOVE GOOGLE TRADE MARK", mask)
     
     # Create skeleton for lines to get more accurately
-#     thinned = cv2.ximgproc.thinning(mask)
-#     contours, hier = cv2.findContours(thinned,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
     try:
         thinned = mask > filters.threshold_otsu(mask)
     except:
@@ -121,12 +118,43 @@ def fetch_roadsdata(url):
 #     thinned = skeletonize(thinned)
 #     thinned = thinned.astype(np.uint8)
     
-    interections = getSkeletonIntersection(thinned)
+    #intersections = getSkeletonIntersections(thinned)
+    
+    intersections, endpoints = getSkeletonIntersectionsAndEndPoints(thinned)
+    
+    intersections = intersections + endpoints
+    
     contours, hier = cv2.findContours(thinned,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)    
-    # draw the outline of all contours
-    for cnt in contours:
-            roads.append(cnt)
-    return roads, interections
+    
+    # Get all segment contours
+    for n, cnt in enumerate(contours):
+            points = cnt.ravel()  
+            i = 0
+            n_points = len(points)
+            segment = []
+            
+            for j in points:
+                if(i % 2 == 0) and (i <= n_points):
+                    x = points[i] 
+                    y = points[i + 1] 
+                    p = (x,y)
+                    print(p)
+                    segment.append(p)
+                    for s in intersections: 
+                        if p == s :
+                            roads.append(segment)
+                            segment = []
+                            segment.append(p)
+                           
+                i = i + 1
+    # Clean up, remove points and duplicate
+    for s in roads:
+        print (s)
+        if len(s) == 1:
+            roads.remove(s)
+    roads = check_and_remove_lines_duplicate(roads)                         
+    
+    return roads, endpoints
 def display_shpinfo(inputfile):
     with shapefile.Reader(inputfile, encoding = "utf-8") as shp:
         # read information from 1 object
@@ -237,7 +265,14 @@ def split_line_with_points(line, points):
         segments.append(seg)
     segments.append(current_line)
     return segments
-
+def check_and_remove_lines_duplicate(allsegments):
+    for s1 in allsegments:
+        for s2 in allsegments:
+            if (len(s1) == len(s2)) and (s1[0] == s2[0]) and (s1[len(s1) - 1] == s2[len(s2) - 1]) and (s1 != s2):
+                allsegments.remove(s2);
+            if (len(s1) == len(s2)) and (s1[0] == s2[len(s2) - 1]) and (s1[len(s1) - 1] == s2[0]) and (s1 != s2):
+                allsegments.remove(s2);                
+    return allsegments
 def write_points2shpfile(outputfile, points):
     with shapefile.Writer(outputfile, shapeType=shapefile.POINT, encoding="utf8") as shp:
         shp.field('Name', 'C', size=40)
@@ -278,6 +313,7 @@ def write_polygons2shpfile(outputfile, polygons, theorybbox):
         print(theorybbox)
         
     boundarylines = LineString(bbpoly.exterior.coords)
+    trueboundary = LineString(theorybbox.exterior.coords)
     
     centerpoints = []
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYGON, encoding="utf8") as shp:
@@ -305,9 +341,14 @@ def write_polygons2shpfile(outputfile, polygons, theorybbox):
             # Identify jointly polygon
             bJointly = 0
             if boundarylines.touches(gpoly):
-                bJointly = 1  
+                bJointly = 1
+
+
+            if (bJointly ==1) and (gpoly.touches(trueboundary) == False):
+                #gpoly = gpoly.buffer(0)
+                print("polygon " + str(n + 1))                
             #Simplify and create centroid
-            gpoly = gpoly.simplify(0.000005)
+            #gpoly = Polygon(gpoly.simplify(0.00001))
             #centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))             
             coords = gpoly.exterior.coords
             outpoly = []
@@ -336,13 +377,13 @@ def write_polygons2shpfile(outputfile, polygons, theorybbox):
     print('Done! ', outputfile)
     #write_points2shpfile("%s_centroids.shp" % outputfile[:-4], centerpoints)
 
-def write_linestring2shpfile(outputfile, lines, interections):
+def write_linestring2shpfile(outputfile, lines, endpoints):
     with shapefile.Writer(outputfile, shapeType=shapefile.POLYLINE, encoding="utf8") as shp:
         shp.field('Name', 'C', size=40)
         intersect_points = []
         
-        if interections is not None:
-            for p in interections:
+        if endpoints is not None:
+            for p in endpoints:
                 intersect_points.append(Point(p))
             for i, l in enumerate(lines):
                 if (len(l) == 1):
@@ -374,7 +415,7 @@ def write_linestring2shpfile(outputfile, lines, interections):
                     continue                
                 try:
                     glinestring = LineString(l)
-                    glinestring = glinestring.simplify(0.000003)
+                    glinestring = glinestring.simplify(0.00001)
                     outlines = []
                     for pp in glinestring.coords:
                         outlines.append([pp[0],pp[1]])
@@ -429,6 +470,7 @@ def create_layers_in_database():
               Jointly  BOOLEAN,
               Address TEXT,
               geom GEOMETRY DEFAULT NULL,
+              j_point GEOMETRY DEFAULT NULL,
               cent_point GEOMETRY DEFAULT NULL); '''
         cursor.execute(query_createtable)
         connection.commit()
@@ -444,7 +486,7 @@ def create_layers_in_database():
               Jointly  BOOLEAN,
               Address TEXT,
               geom GEOMETRY DEFAULT NULL,
-              cent_point GEOMETRY DEFAULT NULL); '''
+              j_point GEOMETRY DEFAULT NULL); '''
         cursor.execute(query_createtable)        
         
         #cursor.execute("CREATE EXTENSION postgis;")
@@ -502,6 +544,7 @@ def write_buildings2database(connection, tileX, tileY, polygons, theorybbox):
     if theorybbox is None:
         theorybbox = bbpoly
         
+    #boundarylines = LineString(theorybbox.exterior.coords)
     boundarylines = LineString(theorybbox.exterior.coords)
     
     values_list = []
@@ -509,30 +552,36 @@ def write_buildings2database(connection, tileX, tileY, polygons, theorybbox):
         gpoly = Polygon(p)          
         # Identify jointly polygon
         bJointly = False
+        j_point = None
         if boundarylines.touches(gpoly):
-            bJointly = True           
-        #gpoly = Polygon(gpoly.simplify(0.000005))
+            bJointly = True
+            intersection = gpoly.exterior.intersection(boundarylines)
+            j_point = Point(intersection.centroid._get_coords()[0][0], intersection.centroid._get_coords()[0][1]) 
+            j_point = j_point.wkb 
+            print(intersection)          
+        #gpoly = Polygon(gpoly.simplify(0.00001))
         #centerpoints.append((gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]))
         area = calculate_polygon_area_in_m2(gpoly)
         name = 'polygon' + str(n+1)    
         address = 'Info'
         geom =  gpoly.wkb
         center_point = Point(gpoly.centroid._get_coords()[0][0], gpoly.centroid._get_coords()[0][1]) 
-        center_point = center_point.wkb   
+        center_point = center_point.wkb
+           
         
 #         results = getlocationinformation(gpoly.centroid._get_coords()[0][1], gpoly.centroid._get_coords()[0][0])
 #         r = results['results'][0]['formatted_address']
 #         if r is not None:
 #             address = r
-        value = (tileX, tileY, name, area, bJointly, address, geom, center_point)
+        value = (tileX, tileY, name, area, bJointly, address, geom, j_point, center_point)
         values_list.append(value)
         print ("Verified " + name)
     
     try:
         cursor = connection.cursor()
         sql = """
-            INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom, cent_point)
-            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326), ST_GeomFromWKB(%s::geometry, 4326))
+            INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom, j_point, cent_point)
+            VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326), ST_GeomFromWKB(%s::geometry, 4326), ST_GeomFromWKB(%s::geometry, 4326))
         """
         psycopg2.extras.execute_batch(cursor, sql, values_list)
         print ("Inserted all Buildings for Tile ",tileX, "_",tileY )
@@ -546,65 +595,48 @@ def write_buildings2database(connection, tileX, tileY, polygons, theorybbox):
     if(cursor):
         cursor.close()             
     return connection                
-def write_roads2database(connection, tileX, tileY, roadtype, lines, interections):
+def write_roads2database(connection, tileX, tileY, roadtype, lines, gis_endpoints):
     
-    intersect_points = []
     values_list = []
-    if interections is not None:
-        for p in interections:
-            intersect_points.append(Point(p))
-        for i, l in enumerate(lines):
-            if (len(l) == 1):
-                continue
-            glinestring = LineString(l)
-            try:
-                segments = split_line_with_points(glinestring, intersect_points)
-                for n, s in enumerate(segments):
-                    geom = LineString(s.simplify(0.000003))
-                    name = 'linestring ' + str(i) + '_' + str(n)    
-                    address = 'Info'
-                    center_point = Point(geom.centroid._get_coords()[0][0], geom.centroid._get_coords()[0][1]) 
-                    center_point = center_point.wkb 
-                    geom =  geom.wkb
-                    value = (tileX, tileY, name, roadtype, False, address, geom, center_point)
-                    values_list.append(value) 
-                    print ("Verified " + name)                        
-
-            except:
-                geom = LineString(glinestring.simplify(0.000003))
-                name = 'linestring ' + str(i)  
-                address = 'Info'
-                center_point = Point(geom.centroid._get_coords()[0][0], geom.centroid._get_coords()[0][1]) 
-                center_point = center_point.wkb 
-                geom =  geom.wkb  
-                value = (tileX, tileY, name, roadtype, False, address, geom, center_point)
-                values_list.append(value)
-                print ("Verified " + name)
+    if gis_endpoints is None:
+        print ('No end points provided')
     else:
-        for i, l in enumerate(lines):
-            if (len(l) == 1):
-                continue
-            try:
-                geom = LineString(l)
-                geom = LineString(geom.simplify(0.000003))
-                name = 'linestring ' + str(i)  
-                address = 'Info'
-                center_point = Point(geom.centroid._get_coords()[0][0], geom.centroid._get_coords()[0][1]) 
-                center_point = center_point.wkb                 
-                geom =  geom.wkb
-                value = (tileX, tileY, name, roadtype, False, address, geom, center_point)
-                values_list.append(value)
-                print ("Verified " + name)                      
-            except:
-                return    
+        print (gis_endpoints)
+        
+    for i, l in enumerate(lines):
+        if (len(l) == 1):
+            continue
+        glinestring = LineString(l)
+        j_point = None
+        try:
+            
+            for pp in glinestring.coords:
+                p = (pp[0],pp[1])
+                for ep in gis_endpoints:
+                    if p == ep:
+                        j_point = Point(p)
+                        j_point = j_point.wkb 
+                        continue
+                        
+            geom = LineString(glinestring.simplify(0.00001))
+            name = 'linestring ' + str(i)  
+            address = 'Info'
+            geom =  geom.wkb  
+            
+            value = (tileX, tileY, name, roadtype, False, address, geom, j_point)
+            values_list.append(value)
+            print ("Verified " + name)                    
+
+        except:
+            return  
     try:
         cursor = connection.cursor()
         sql = """
-            INSERT INTO Roads(X, Y, Name, Type, Jointly, Address, geom, cent_point)
+            INSERT INTO Roads(X, Y, Name, Type, Jointly, Address, geom, j_point)
             VALUES (%s, %s, %s, %s, %s, %s, ST_GeomFromWKB(%s::geometry, 4326), ST_GeomFromWKB(%s::geometry, 4326))
         """
         psycopg2.extras.execute_batch(cursor, sql, values_list)
-        print ("Inserted all Roads for Tile", tileX, "_",tileY)
+        print ("Inserted all Roads (%s) for Tile" % roadtype, tileX, "_",tileY)
         connection.commit()
                 
     except (Exception, psycopg2.Error) as error :
@@ -636,7 +668,47 @@ def neighbours(x,y,image):
     """Return 8-neighbours of image point P1(x,y), in a clockwise order"""
     img = image
     x_1, y_1, x1, y1 = x-1, y-1, x+1, y+1;
-    return [ img[x_1][y], img[x_1][y1], img[x][y1], img[x1][y1], img[x1][y], img[x1][y_1], img[x][y_1], img[x_1][y_1] ] 
+    size = len(image)
+    if (x > 0) and (x < size - 1) and (y > 0) and (y < size - 1):
+        return [ img[x_1][y], img[x_1][y1], img[x][y1], img[x1][y1], img[x1][y], img[x1][y_1], img[x][y_1], img[x_1][y_1] ]
+    if x_1 < 0:
+        n1 = 0.0
+        n2 = 0.0
+        n3 = img[x][y1]
+        n4 = img[x1][y1]
+        n5 = img[x1][y]
+        n6 = img[x1][y_1]
+        n7 = img[x][y_1]        
+        n8 = 0.0
+    if y_1 < 0:
+        n1 = img[x_1][y]
+        n2 = img[x_1][y1]
+        n3 = img[x][y1]
+        n4 = img[x1][y1]
+        n5 = img[x1][y]        
+        n6 = 0.0
+        n7 = 0.0
+        n8 = 0.0
+    if x1 > len(image) - 1:
+        n1 = img[x_1][y]
+        n2 = img[x_1][y1]
+        n3 = img[x][y1]        
+        n4 = 0.0
+        n5 = 0.0
+        n6 = 0.0
+        n7 = img[x][y_1]
+        n8 = img[x_1][y_1]        
+    if y1 > len(image) - 1:
+        n1 = img[x_1][y] 
+        n2 = 0.0
+        n3 = 0.0
+        n4 = 0.0
+        n5 = img[x1][y]
+        n6 = img[x1][y_1]
+        n7 = img[x][y_1]
+        n8 = img[x_1][y_1]        
+    return [ n1, n2, n3, n4, n5, n6, n7, n8 ] 
+
 def getSkeletonIntersectionsAndEndPoints(skeleton):
     """ Given a skeletonised image, it will give the coordinates of the intersections of the skeleton.
 
@@ -678,8 +750,18 @@ def getSkeletonIntersectionsAndEndPoints(skeleton):
     image = skeleton.copy();
     image = image/255;
     intersections = list();
-    for x in range(1,len(image)-1):
-        for y in range(1,len(image[x])-1):
+    
+    size = len(image)
+    for x in range(0,len(image)):
+        for y in range(0,len(image[x])):  
+            if (x == 0) or (x == size -1) or (y == 0) or ( y == size -1):
+                if image[x][y] == 1:
+                    image[x][y] = 0    
+    
+#     for x in range(1,len(image)-1):
+#         for y in range(1,len(image[x])-1):
+    for x in range(0,len(image)):
+        for y in range(0,len(image[x])): 
             # If we have a white pixel
             if image[x][y] == 1:
                 nbs = neighbours(x,y,image);
@@ -721,12 +803,19 @@ def getSkeletonIntersections(skeleton):
     image = skeleton.copy();
     image = image/255;
     intersections = list();
-    for x in range(1,len(image)-1):
-        for y in range(1,len(image[x])-1):
+
+    size = len(image)
+    for x in range(0,len(image)):
+        for y in range(0,len(image[x])):  
+            if (x == 0) or (x == size -1) or (y == 0) or ( y == size -1):
+                if image[x][y] == 1:
+                    image[x][y] = 0
+
+    for x in range(0,len(image)):
+        for y in range(0,len(image[x])):                       
             # If we have a white pixel
             if image[x][y] == 1:
                 nbs = neighbours(x,y,image);
-                valid = True;
                 if nbs in validIntersection:
                     intersections.append((y,x));    
     # Filter intersections to make sure we don't count them twice or ones that are very close together
