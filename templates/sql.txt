@@ -1,0 +1,36 @@
+SELECT a.id As myid, b.id as matched_id, a.geom as g1, b.geom as g2
+FROM buildings a
+INNER JOIN buildings b ON 
+   (a.geom && b.geom AND a.jointly = true and b.jointly = true and ST_Distance(a.j_point, b.j_point) < 0.00002)
+WHERE a.id != b.id
+
+
+
+SELECT myid, matched_id , g1, g2, ST_ConvexHull(ST_Union(g1,g2)) as jointgeom
+FROM	   
+(SELECT a.id As myid, b.id as matched_id, a.geom as g1, b.geom as g2
+FROM buildings a
+INNER JOIN buildings b ON 
+   (a.geom && b.geom AND a.jointly = true and b.jointly = true and ST_Distance(a.j_point, b.j_point) < 0.00002)
+WHERE a.id != b.id) as JointPolygons
+
+
+
+
+INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom)
+SELECT X, Y, Name, ST_Area(ST_ConvexHull(ST_Union(g1,g2))) as CalcArea, false, Address, ST_ConvexHull(ST_Union(g1,g2)) as jointgeom
+FROM	   
+(SELECT a.id As myid, a.X as X, a.Y as Y, a.Name as Name, a.Address as Address, a.Jointly as Jointly, b.id as matched_id, a.geom as g1, b.geom as g2
+FROM buildings a
+INNER JOIN buildings b ON 
+   (a.jointly = true and b.jointly = true and ST_Distance(a.j_point, b.j_point) < 0.00002)
+WHERE a.id != b.id) as JointPolygons
+
+INSERT INTO Buildings(X, Y, Name, CalcArea, Jointly, Address, geom)
+SELECT X, Y, Name, ST_Area(ST_Union(g1,g2)) as CalcArea, false, Address, ST_Union(g1,g2) as jointgeom
+FROM	   
+(SELECT a.id As myid, a.X as X, a.Y as Y, a.Name as Name, a.Address as Address, a.Jointly as Jointly, b.id as matched_id, a.geom as g1, b.geom as g2
+FROM buildings a
+INNER JOIN buildings b ON 
+   (a.jointly = true and b.jointly = true and ST_Distance(a.j_point, b.j_point) < 0.00002)
+WHERE a.id != b.id) as JointPolygons
